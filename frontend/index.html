@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UrbanPulse — AI Traffic Intelligence Platform</title>
+    <!-- Import standard sans-serif font Inter from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Professional Navigation Header -->
+    <header class="app-header">
+        <div class="header-container">
+            <div class="logo-zone">
+                <span class="logo-text">URBAN<span class="logo-accent">PULSE</span></span>
+                <span class="logo-subtitle">AI Road Intelligence</span>
+            </div>
+            <div class="status-zone">
+                <div class="status-indicator">
+                    <span class="status-dot"></span>
+                    <span class="status-label">AI Engine Ready</span>
+                </div>
+                <span class="phase-tag">Phase 1 Prototype</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="app-main">
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <h1>AI Traffic Detection & Tracking</h1>
+            <p>Upload local traffic footage to run the YOLO object tracking pipeline, calculate directional line-crossing counts, and classify road congestion density.</p>
+        </section>
+
+        <!-- Video Processing Section -->
+        <section class="dashboard-grid">
+            
+            <!-- Left Card: Input Video -->
+            <div class="dashboard-card input-card">
+                <div class="card-header">
+                    <h2>Input Traffic Footage</h2>
+                    <span class="card-desc">Supported formats: MP4, MOV, AVI, MKV</span>
+                </div>
+                    <!-- Input Source Toggle (Video vs Photo) -->
+                    <div class="input-source-toggle" style="display: flex; gap: 0.5rem; margin-bottom: 1.2rem; background: #F1F5F9; padding: 0.3rem; border-radius: 6px;">
+                        <button type="button" id="tab-video" class="source-tab active" style="flex: 1; padding: 0.5rem; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; background: #FFFFFF; color: #1E293B; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.2s;">🎥 Video Analysis</button>
+                        <button type="button" id="tab-image" class="source-tab" style="flex: 1; padding: 0.5rem; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; background: transparent; color: #64748B; transition: all 0.2s;">📸 Photo / Image Analysis</button>
+                    </div>
+
+                    <!-- Drag and Drop Dropzone -->
+                    <div id="dropzone" class="upload-dropzone">
+
+                        <div class="dropzone-content">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                            </svg>
+                            <p class="dropzone-title">Drag & drop traffic video here</p>
+                            <p class="dropzone-or">or</p>
+                            <button type="button" id="browse-btn" class="btn btn-secondary">Browse Files</button>
+                            <input type="file" id="file-input" accept=".mp4,.mov,.avi,.mkv" style="display: none;">
+                        </div>
+                    </div>
+
+                    <!-- File Preview Zone -->
+                    <div id="preview-zone" class="file-preview-zone" style="display: none;">
+                        <div class="file-details">
+                            <div class="file-meta">
+                                <span class="file-name" id="preview-filename">road_video.mp4</span>
+                                <span class="file-size" id="preview-filesize">4.2 MB</span>
+                            </div>
+                            <button type="button" id="remove-file-btn" class="btn-close" title="Remove video">&times;</button>
+                        </div>
+                        <div class="preview-container">
+                            <video id="input-preview" muted playsinline></video>
+                        </div>
+                    </div>
+                    
+                    <!-- Analysis Mode Selector -->
+                    <div class="analysis-mode-container" style="margin-top: 1.2rem; padding-top: 1.2rem; border-top: 1px solid var(--border-color);">
+                        <label for="analysis-mode" class="input-label" style="display: block; margin-bottom: 0.6rem; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">AI Analysis Mode</label>
+                        <select id="analysis-mode" class="form-control" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background-color: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: 0.9rem; cursor: pointer; outline: none; transition: border-color var(--transition-fast);">
+                            <option value="traffic">Traffic Analysis (Phase 1)</option>
+                            <option value="road">Road Condition Analysis (Phase 2.1)</option>
+                            <option value="vehicle">Vehicle Identification & Number Plate (Phase 2.2)</option>
+                            <option value="combined">Combined Analysis (Traffic + Road)</option>
+                        </select>
+
+                    </div>
+                    
+                    <!-- Camera Type Selector -->
+                    <div class="camera-type-container" style="margin-top: 1rem;">
+                        <label for="camera-type" class="input-label" style="display: block; margin-bottom: 0.6rem; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">Camera Type</label>
+                        <select id="camera-type" class="form-control" style="width: 100%; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background-color: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: 0.9rem; cursor: pointer; outline: none; transition: border-color var(--transition-fast);">
+                            <option value="stationary">Stationary Camera (Fixed / CCTV)</option>
+                            <option value="moving">Moving Camera (Vehicle-Mounted / Mobile)</option>
+                        </select>
+                        <small id="camera-type-help" style="display: block; margin-top: 0.4rem; font-size: 0.75rem; color: var(--text-secondary);">Fixed camera / CCTV / junction traffic flow monitoring</small>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button type="button" id="process-btn" class="btn btn-primary w-full" disabled>
+                        <span>Analyze Traffic</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Card: Output Video -->
+            <div class="dashboard-card output-card">
+                <div class="card-header">
+                    <h2>Annotated Output Pipeline</h2>
+                    <span class="card-desc">YOLO Object Tracking & Telemetry Overlay</span>
+                </div>
+                <div class="card-body video-output-body">
+                    <!-- Idle State -->
+                    <div id="output-idle" class="output-placeholder-state">
+                        <div class="placeholder-content">
+                            <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+                            </svg>
+                            <p>Awaiting analysis of input traffic video</p>
+                        </div>
+                    </div>
+
+                    <!-- Processing/Loading State -->
+                    <div id="output-loading" class="output-placeholder-state" style="display: none;">
+                        <div class="loading-content">
+                            <div class="spinner"></div>
+                            <p class="loading-title">YOLO is analyzing the traffic footage...</p>
+                            <p class="loading-subtitle">Detecting vehicles, tracking paths, and calculating density.</p>
+                        </div>
+                    </div>
+
+                    <!-- Completed Results Player -->
+                    <div id="output-player-container" class="output-video-container" style="display: none;">
+                        <video id="output-video" controls playsinline></video>
+                    </div>
+                </div>
+                <div class="card-footer output-card-footer" style="display: none;">
+                    <a id="download-btn" class="btn btn-secondary w-full text-center" download="traffic_analysis_output.mp4">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                        </svg>
+                        Download Processed Video
+                    </a>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Traffic Analysis Section -->
+        <section class="analysis-section">
+            <div class="section-title">
+                <h2>Traffic Analysis Telemetry</h2>
+                <p>Statistics derived from the line-crossing metrics and active Region of Interest (ROI).</p>
+            </div>
+
+            <!-- Empty State for Statistics -->
+            <div id="stats-empty" class="stats-placeholder-state">
+                <p>No analysis yet. Upload and analyze a traffic video to view telemetry metrics.</p>
+            </div>            <!-- Stats Dashboard Area -->
+            <div id="stats-dashboard" class="stats-dashboard-area" style="display: none;">
+                
+                <!-- 1. Traffic AI Stats Section -->
+                <div id="traffic-stats-section">
+                    <!-- KPI Summary cards -->
+                    <div class="kpi-grid">
+                        <div class="kpi-card">
+                            <span class="kpi-label">Total Vehicles Counted</span>
+                            <span class="kpi-value" id="kpi-vehicles">-</span>
+                            <span class="kpi-subtitle">Passed counting line</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Total Persons Detected</span>
+                            <span class="kpi-value" id="kpi-persons">-</span>
+                            <span class="kpi-subtitle">Pedestrians separate from vehicles</span>
+                        </div>
+                        <div class="kpi-card" id="density-card">
+                            <span class="kpi-label">Traffic Density in ROI</span>
+                            <span class="kpi-value" id="kpi-density">-</span>
+                            <span class="kpi-subtitle">Live congestion status inside ROI</span>
+                        </div>
+                    </div>
+
+                    <!-- Detailed class counts table -->
+                    <div class="detailed-counts-card">
+                        <div class="card-header">
+                            <h3>Detailed Object Counts</h3>
+                            <span class="card-desc">Accumulated crossings in both direction lanes</span>
+                        </div>
+                        <div class="table-container">
+                            <table class="telemetry-table" id="telemetry-table">
+                                <thead>
+                                    <tr>
+                                        <th>Object Class</th>
+                                        <th>Unique Detected</th>
+                                        <th>Line Crossings</th>
+                                        <th>Category</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Dynamic rows inserted by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Auto-Rickshaw note -->
+                        <div class="auto-rickshaw-notice">
+                            <p><strong>Note:</strong> Auto-rickshaw class is currently unsupported in this prototype weights dataset (`yolo11n.pt`). In the final SIH hardware, a custom trained weights file (Phase 2) will be loaded to support specialized local vehicle types.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Road AI Stats Section -->
+                <div id="road-stats-section" style="display: none; margin-top: 1.5rem;">
+                    <div class="kpi-grid">
+                        <div class="kpi-card">
+                            <span class="kpi-label">Potholes Detected</span>
+                            <span class="kpi-value" id="kpi-potholes">-</span>
+                            <span class="kpi-subtitle">Unique road condition hazards</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">GPS Geotagging Status</span>
+                            <span class="kpi-value" id="kpi-gps" style="color: var(--text-secondary);">WAITING</span>
+                            <span class="kpi-subtitle">Simulated coordinates: NULL</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">IMU Sensor Fusion</span>
+                            <span class="kpi-value" id="kpi-imu" style="color: var(--text-secondary);">WAITING</span>
+                            <span class="kpi-subtitle">Simulated acceleration: NULL</span>
+                        </div>
+                    </div>
+
+                    <div class="detailed-counts-card" style="margin-top: 1.5rem;">
+                        <div class="card-header">
+                            <h3>Pothole Detection Log</h3>
+                            <span class="card-desc">Deduplicated unique pothole events with snapshot evidence</span>
+                        </div>
+                        <div class="table-container">
+                            <table class="telemetry-table" id="potholes-table">
+                                <thead>
+                                    <tr>
+                                        <th>Event ID</th>
+                                        <th>Type</th>
+                                        <th>Timestamp</th>
+                                        <th>Confidence</th>
+                                        <th>Evidence Snapshot</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Dynamic rows inserted by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Phase 2.2 Vehicle Identification & Number Plate Section -->
+                <div id="vehicle-stats-section" style="display: none; margin-top: 1.5rem;">
+                    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+                        <div class="kpi-card">
+                            <span class="kpi-label">Total Vehicles Identified</span>
+                            <span class="kpi-value" id="kpi-anpr-total">-</span>
+                            <span class="kpi-subtitle">Unique tracked vehicles</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Number Plates Read</span>
+                            <span class="kpi-value" id="kpi-anpr-read" style="color: #2F855A;">-</span>
+                            <span class="kpi-subtitle">High-confidence OCR reads</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Unreadable Plates</span>
+                            <span class="kpi-value" id="kpi-anpr-unreadable" style="color: #C53030;">-</span>
+                            <span class="kpi-subtitle">Occluded / low resolution</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Unique Tracks</span>
+                            <span class="kpi-value" id="kpi-anpr-unique">-</span>
+                            <span class="kpi-subtitle">Persistent YOLO Track IDs</span>
+                        </div>
+                    </div>
+
+                    <div class="detailed-counts-card" style="margin-top: 1.5rem;">
+                        <div class="card-header">
+                            <h3>Vehicle Identification & Number Plate Log</h3>
+                            <span class="card-desc">Spatial association, multi-frame OCR aggregation & visual evidence</span>
+                        </div>
+                        <div class="table-container">
+                            <table class="telemetry-table" id="vehicles-anpr-table">
+                                <thead>
+                                    <tr>
+                                        <th>Track ID</th>
+                                        <th>Vehicle Type</th>
+                                        <th>Registration Number</th>
+                                        <th>Vehicle Conf</th>
+                                        <th>Plate Conf</th>
+                                        <th>OCR Conf</th>
+                                        <th>Timestamp</th>
+                                        <th>Evidence</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Dynamic rows inserted by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Phase 2.2 Still Photo / Image Analysis Section -->
+                <div id="photo-stats-section" style="display: none; margin-top: 1.5rem;">
+                    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+                        <div class="kpi-card">
+                            <span class="kpi-label">Vehicles Detected</span>
+                            <span class="kpi-value" id="kpi-img-vehicles">-</span>
+                            <span class="kpi-subtitle">Cars, trucks, buses, bikes</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Plates Detected</span>
+                            <span class="kpi-value" id="kpi-img-plates">-</span>
+                            <span class="kpi-subtitle">Number plate regions</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Readable Plates</span>
+                            <span class="kpi-value" id="kpi-img-read" style="color: #2F855A;">-</span>
+                            <span class="kpi-subtitle">OCR text extracted</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Unreadable Plates</span>
+                            <span class="kpi-value" id="kpi-img-unreadable" style="color: #C53030;">-</span>
+                            <span class="kpi-subtitle">Low res / occluded</span>
+                        </div>
+                    </div>
+
+                    <!-- Genuine Metadata Info Banner -->
+                    <div class="meta-info-banner" style="background: #F8FAFC; border: 1px solid var(--border-color); padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1.5rem; display: flex; gap: 2rem; font-size: 0.85rem; color: var(--text-secondary);">
+                        <div><strong>Timestamp:</strong> <span id="img-timestamp-val">Analysis Time</span></div>
+                        <div><strong>GPS:</strong> <span id="img-gps-val">Unavailable</span></div>
+                        <div><strong>IMU:</strong> <span>Not available</span></div>
+                    </div>
+
+                    <div class="detailed-counts-card" style="margin-top: 1.5rem;">
+                        <div class="card-header">
+                            <h3>Number Plate Detection Log</h3>
+                            <span class="card-desc">Vehicle detection, number plate OCR & evidence crops</span>
+                        </div>
+                        <div class="table-container">
+                            <table class="telemetry-table" id="photo-plate-log-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Vehicle Type</th>
+                                        <th>Registration Number</th>
+                                        <th>Vehicle Conf</th>
+                                        <th>Plate Conf</th>
+                                        <th>OCR Conf</th>
+                                        <th>Evidence</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Dynamic rows inserted by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- 3. Rash Driving Safety Violation & Incident Reporting Pipeline Card -->
+                <div class="detailed-counts-card incident-flow-card" style="margin-top: 1.5rem;">
+                    <div class="card-header d-flex justify-between align-center">
+                        <div>
+                            <h3>Rash Driving Incident Reporting Engine</h3>
+                            <span class="card-desc">Event-Driven Telemetry & Evidence Flowchart Pipeline</span>
+                        </div>
+                        <span class="status-badge badge-warning">Active Enforcement</span>
+                    </div>
+
+                    <!-- Flowchart Timeline Visualizer -->
+                    <div class="flowchart-container">
+                        <div class="flow-step step-event">
+                            <div class="step-icon">⚡</div>
+                            <div class="step-title">RASH DRIVING</div>
+                            <div class="step-sub">Anomaly Detected</div>
+                        </div>
+                        <div class="flow-arrow">↓</div>
+
+                        <div class="flow-step step-track">
+                            <div class="step-icon">🚗</div>
+                            <div class="step-title">Vehicle Track #27</div>
+                            <div class="step-sub">Persistent ID</div>
+                        </div>
+                        <div class="flow-arrow">↓</div>
+
+                        <div class="flow-step step-plate">
+                            <div class="step-icon">🪪</div>
+                            <div class="step-title">Plate GJ01AB1234</div>
+                            <div class="step-sub">ANPR / OCR Identified</div>
+                        </div>
+                        <div class="flow-arrow">↓</div>
+
+                        <div class="flow-step step-time">
+                            <div class="step-icon">⏱️</div>
+                            <div class="step-title">Timestamp</div>
+                            <div class="step-sub">14.25s (21:42:31 IST)</div>
+                        </div>
+                        <div class="flow-arrow">↓</div>
+
+                        <div class="flow-step step-gps">
+                            <div class="step-icon">📍</div>
+                            <div class="step-title">GPS Coordinates</div>
+                            <div class="step-sub">23.0225° N, 72.5714° E</div>
+                        </div>
+                        <div class="flow-arrow">↓</div>
+
+                        <div class="flow-step step-evidence">
+                            <div class="step-icon">📸</div>
+                            <div class="step-title">Visual Evidence</div>
+                            <div class="step-sub">Crop & BBox Snapshots</div>
+                        </div>
+                        <div class="flow-arrow">↓</div>
+
+                        <div class="flow-step step-report highlight-report" id="trigger-report-btn">
+                            <div class="step-icon">📋</div>
+                            <div class="step-title">Incident Report</div>
+                            <div class="step-sub">#REP-INC-20260902-27</div>
+                        </div>
+                    </div>
+
+                    <div class="flowchart-actions" style="margin-top: 1.2rem; text-align: center;">
+                        <button type="button" id="view-report-modal-btn" class="btn btn-primary">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                            </svg>
+                            View Official Incident Report (#INC-20260902-27)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Performance Telemetry Card -->
+                <div class="detailed-counts-card performance-card" style="margin-top: 1.5rem;">
+                    <div class="card-header">
+                        <h3>AI Pipeline Execution Metrics</h3>
+                        <span class="card-desc">Real-time processing efficiency and hardware statistics</span>
+                    </div>
+                    <div class="performance-stats-grid">
+                        <div class="perf-item">
+                            <span class="perf-label">Input Resolution</span>
+                            <span class="perf-value" id="perf-input-res">-</span>
+                        </div>
+                        <div class="perf-item">
+                            <span class="perf-label">Inference Size</span>
+                            <span class="perf-value" id="perf-process-res">-</span>
+                        </div>
+                        <div class="perf-item">
+                            <span class="perf-label">Source Frame Rate</span>
+                            <span class="perf-value" id="perf-source-fps">-</span>
+                        </div>
+                        <div class="perf-item">
+                            <span class="perf-label">Total Video Frames</span>
+                            <span class="perf-value" id="perf-total-frames">-</span>
+                        </div>
+                        <div class="perf-item">
+                            <span class="perf-label">Execution Device</span>
+                            <span class="perf-value" id="perf-device">-</span>
+                        </div>
+                        <div class="perf-item">
+                            <span class="perf-label">Processing Speed</span>
+                            <span class="perf-value" id="perf-avg-fps">-</span>
+                        </div>
+                        <div class="perf-item">
+                            <span class="perf-label">Analysis Duration</span>
+                            <span class="perf-value" id="perf-elapsed">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Incident Report Modal Container -->
+        <div id="incident-modal" class="modal-backdrop" style="display: none;">
+            <div class="modal-card">
+                <div class="modal-header">
+                    <h2>OFFICIAL SAFETY INCIDENT REPORT</h2>
+                    <button type="button" id="close-modal-btn" class="modal-close-btn">&times;</button>
+                </div>
+                <div class="modal-body" id="incident-modal-content">
+                    <!-- Dynamic HTML summary inserted by app.js -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" onclick="window.print()" class="btn btn-secondary">Print / Export PDF</button>
+                    <button type="button" id="dismiss-modal-btn" class="btn btn-primary">Close Report</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    </main>
+
+    <footer class="app-footer">
+        <div class="footer-container">
+            <p>&copy; 2026 Smart India Hackathon — Problem Statement 26124 Prototype.</p>
+            <p class="footer-dev-device">AI Processing Hardware Status: <span id="device-label">Determining...</span></p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
