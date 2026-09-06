@@ -62,6 +62,12 @@ document.addEventListener("DOMContentLoaded", () => {
             fileInput.accept = ".mp4,.mov,.avi,.mkv";
             cardDesc.textContent = "Supported formats: MP4, MOV, AVI, MKV";
             if (dropzoneTitle) dropzoneTitle.textContent = "Drag & drop traffic video here";
+
+            const analysisModeSec = document.querySelector(".analysis-mode-container");
+            const cameraTypeSec = document.querySelector(".camera-type-container");
+            if (analysisModeSec) analysisModeSec.style.display = "block";
+            if (cameraTypeSec) cameraTypeSec.style.display = "block";
+
             resetUI();
         });
 
@@ -78,6 +84,12 @@ document.addEventListener("DOMContentLoaded", () => {
             fileInput.accept = ".jpg,.jpeg,.png,.webp";
             cardDesc.textContent = "Supported formats: JPG, JPEG, PNG, WEBP";
             if (dropzoneTitle) dropzoneTitle.textContent = "Drag & drop traffic photo here";
+
+            const analysisModeSec = document.querySelector(".analysis-mode-container");
+            const cameraTypeSec = document.querySelector(".camera-type-container");
+            if (analysisModeSec) analysisModeSec.style.display = "none";
+            if (cameraTypeSec) cameraTypeSec.style.display = "none";
+
             resetUI();
         });
     }
@@ -132,11 +144,18 @@ document.addEventListener("DOMContentLoaded", () => {
     function handleFileSelection(file) {
         if (!file || isProcessing) return;
 
-        const allowedExtensions = ["mp4", "mov", "avi", "mkv"];
+        const allowedExtensions = inputSourceMode === "image"
+            ? ["jpg", "jpeg", "png", "webp"]
+            : ["mp4", "mov", "avi", "mkv"];
+
         const fileExt = file.name.split(".").pop().toLowerCase();
         
         if (!allowedExtensions.includes(fileExt)) {
-            alert(`Unsupported video format: .${fileExt}\nPlease upload an MP4, MOV, AVI, or MKV video.`);
+            if (inputSourceMode === "image") {
+                alert(`Unsupported image format: .${fileExt}\nPlease upload a JPG, JPEG, PNG, or WEBP photo.`);
+            } else {
+                alert(`Unsupported video format: .${fileExt}\nPlease upload an MP4, MOV, AVI, or MKV video.`);
+            }
             return;
         }
 
@@ -148,8 +167,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Load preview URL locally in browser
         const localUrl = URL.createObjectURL(file);
-        inputPreview.src = localUrl;
-        inputPreview.load();
+        const inputPreviewImg = document.getElementById("input-preview-img");
+
+        if (inputSourceMode === "image") {
+            if (inputPreview) inputPreview.style.display = "none";
+            if (inputPreviewImg) {
+                inputPreviewImg.src = localUrl;
+                inputPreviewImg.style.display = "block";
+            }
+        } else {
+            if (inputPreviewImg) inputPreviewImg.style.display = "none";
+            if (inputPreview) {
+                inputPreview.src = localUrl;
+                inputPreview.style.display = "block";
+                inputPreview.load();
+            }
+        }
 
         // Toggle visibility
         dropzone.style.display = "none";
@@ -175,8 +208,16 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedFile = null;
         fileInput.value = "";
         
-        // Reset preview video player
-        inputPreview.src = "";
+        // Reset preview video and image players
+        if (inputPreview) {
+            inputPreview.src = "";
+            inputPreview.style.display = "none";
+        }
+        const inputPreviewImg = document.getElementById("input-preview-img");
+        if (inputPreviewImg) {
+            inputPreviewImg.src = "";
+            inputPreviewImg.style.display = "none";
+        }
         
         // Reset output player
         outputVideo.src = "";
@@ -580,6 +621,7 @@ document.addEventListener("DOMContentLoaded", () => {
         removeFileBtn.style.display = "block";
         processBtn.disabled = false;
         isProcessing = false;
+    }
 
     // 10. Render Still Photo Analysis Dashboard
     function renderPhotoDashboard(data) {
