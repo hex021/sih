@@ -144,12 +144,13 @@ def run_anpr_pipeline(
         annotated_frame = visualizer.draw(
             frame=frame,
             tracked_objects=tracked_objects,
-            counts=counter.counts,
-            density_category=density_category,
-            active_vehicle_count=active_vehicle_count,
-            debug=debug,
+            counter=counter,
+            density_class=density_category,
+            active_roi_count=active_vehicle_count,
             line_y_rel=line_y_rel,
-            roi_relative=roi_relative
+            roi_relative=roi_relative,
+            camera_mode=camera_mode,
+            unique_counts={c: len(seen_objects[c]) for c in config.TARGET_CLASSES}
         )
 
         # Phase 2.2 Plate Bounding Box & Registration Tag Overlay

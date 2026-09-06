@@ -256,58 +256,50 @@ class TestTrafficAnalyticsCameraModes(unittest.TestCase):
         self.assertEqual(x2, 900)
         self.assertEqual(y2, 850)
 
-class TestRashDrivingIncidentReporting(unittest.TestCase):
+class TestVisualizerRegressionAndPothole(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
 
-    def test_rash_driving_event_creation_and_dict(self):
-        """Test RashDrivingEvent creation, Track #27, Plate GJ01AB1234, and dictionary output."""
-        from phase2.road_ai import RashDrivingEvent, create_rash_driving_event, generate_incident_report
-        
-        event = create_rash_driving_event(
-            track_id=27,
-            license_plate="GJ01AB1234",
-            timestamp=14.25,
-            speed_kmh=84.5
+    def test_visualizer_draw_signature_regression(self):
+        """Verify Visualizer.draw() works cleanly with counter=counter parameter without unexpected keyword argument errors."""
+        from phase1.visualizer import Visualizer
+        from phase1.counter import Counter
+        from phase1.models import TrackedObject
+        import numpy as np
+
+        vis = Visualizer(debug=False)
+        counter = Counter()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        tracked = [
+            TrackedObject(track_id=1, class_name="car", confidence=0.9, bbox=(10, 10, 100, 100), center_x=55, center_y=55, previous_center_x=55, previous_center_y=55)
+        ]
+
+        annotated = vis.draw(
+            frame=frame,
+            tracked_objects=tracked,
+            counter=counter,
+            density_class="LOW",
+            active_roi_count=1,
+            line_y_rel=0.5,
+            roi_relative=(0.0, 0.0, 1.0, 1.0),
+            camera_mode="stationary",
+            unique_counts={"car": 1}
         )
-        self.assertEqual(event.track_id, 27)
-        self.assertEqual(event.license_plate, "GJ01AB1234")
-        self.assertEqual(event.event_type, "RASH DRIVING")
-        self.assertEqual(event.location["latitude"], 23.0225)
-        
-        report = generate_incident_report(event)
-        self.assertTrue(report.report_id.startswith("REP-INC-"))
-        self.assertEqual(report.fine_amount_inr, 2000)
-        
-        d = report.to_dict()
-        self.assertEqual(d["event"]["track_id"], 27)
-        self.assertEqual(d["event"]["license_plate"], "GJ01AB1234")
-        
-        html = report.generate_html_summary()
-        self.assertIn("GJ01AB1234", html)
-        self.assertIn("#27", html)
+        self.assertIsInstance(annotated, np.ndarray)
+        self.assertEqual(annotated.shape, (480, 640, 3))
 
-    def test_sample_incident_api_endpoint(self):
-        """Verify GET /api/incidents/rash-driving/sample returns Track #27 & Plate GJ01AB1234."""
-        response = self.client.get("/api/incidents/rash-driving/sample")
-        self.assertEqual(response.status_code, 200)
-        data = response.get_json()
-        self.assertTrue(data["success"])
-        self.assertEqual(data["report"]["event"]["track_id"], 27)
-        self.assertEqual(data["report"]["event"]["license_plate"], "GJ01AB1234")
-        self.assertIn("GJ01AB1234", data["html_summary"])
-
-    def test_log_incident_api_endpoint(self):
-        """Verify POST /api/incidents/rash-driving creates a new incident report."""
-        response = self.client.post("/api/incidents/rash-driving", json={
-            "track_id": 27,
-            "license_plate": "GJ01AB1234",
-            "speed_kmh": 90.0
-        })
-        self.assertEqual(response.status_code, 201)
-        data = response.get_json()
-        self.assertTrue(data["success"])
-        self.assertEqual(data["report"]["event"]["vehicle_metadata"]["speed_kmh"], 90.0)
+    def test_pothole_detection_on_test_image(self):
+        """Verify PotholeDetector runs inference and detects potholes on the sample pothole test image."""
+        test_img_path = "uploads/10116dc1_image_input.jpg"
+        if os.path.exists(test_img_path):
+            detector = PotholeDetector()
+            frame = cv2.imread(test_img_path)
+            dets, events = detector.detect(frame, frame_number=1, timestamp=0.0)
+            self.assertGreater(len(dets), 0, "PotholeDetector should detect potholes on test image")
+            self.assertGreater(len(events), 0, "PotholeDetector should generate pothole events on test image")
+            for d in dets:
+                self.assertEqual(d.class_name, "POTHOLE")
+                self.assertGreater(d.confidence, 0.1)
 
 if __name__ == "__main__":
     unittest.main()

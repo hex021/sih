@@ -772,44 +772,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
 
-    // 11. Incident Report Modal Handlers
+    // 11. Modal Handlers for Evidence Viewer
     const incidentModal = document.getElementById("incident-modal");
-    const incidentModalContent = document.getElementById("incident-modal-content");
-    const viewReportModalBtn = document.getElementById("view-report-modal-btn");
-    const triggerReportBtn = document.getElementById("trigger-report-btn");
     const closeModalBtn = document.getElementById("close-modal-btn");
     const dismissModalBtn = document.getElementById("dismiss-modal-btn");
 
-    async function openIncidentReportModal() {
-        try {
-            const res = await fetch("/api/incidents/rash-driving/sample");
-            if (res.ok) {
-                const data = await res.json();
-                incidentModalContent.innerHTML = data.html_summary;
-                incidentModal.style.display = "flex";
-            } else {
-                alert("Failed to load Incident Report from server.");
-            }
-        } catch (err) {
-            console.error("Error fetching incident report:", err);
-            alert("Error connecting to server for incident report.");
-        }
-    }
-
-    if (viewReportModalBtn) {
-        viewReportModalBtn.addEventListener("click", openIncidentReportModal);
-    }
-    if (triggerReportBtn) {
-        triggerReportBtn.addEventListener("click", openIncidentReportModal);
-    }
     if (closeModalBtn) {
         closeModalBtn.addEventListener("click", () => {
-            incidentModal.style.display = "none";
+            if (incidentModal) incidentModal.style.display = "none";
         });
     }
     if (dismissModalBtn) {
         dismissModalBtn.addEventListener("click", () => {
-            incidentModal.style.display = "none";
+            if (incidentModal) incidentModal.style.display = "none";
         });
     }
 });

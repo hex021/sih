@@ -70,8 +70,8 @@ class PotholeDetector:
             cls_id = int(cls_list[idx])
             class_name = result.names[cls_id].lower()
             
-            # Verify if class is a pothole
-            if "pothole" in class_name:
+            # Verify if class is a pothole (supports both 'pothole' and single-class index '0')
+            if "pothole" in class_name or class_name in ["0", "pothole"]:
                 bbox = (xyxy_list[idx][0], xyxy_list[idx][1], xyxy_list[idx][2], xyxy_list[idx][3])
                 center_x = (bbox[0] + bbox[2]) / 2.0
                 center_y = (bbox[1] + bbox[3]) / 2.0

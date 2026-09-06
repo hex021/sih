@@ -136,7 +136,7 @@ def download_file(filename):
 
 @app.route("/api/status", methods=["GET"])
 def get_status():
-    """Returns the backend system status and GPU/CPU hardware device type."""
+    """Returns AI engine status and hardware execution info."""
     import torch
     device = "CUDA" if torch.cuda.is_available() else "CPU"
     return jsonify({
@@ -144,37 +144,6 @@ def get_status():
         "device": device,
         "status": "ready"
     })
-
-@app.route("/api/incidents/rash-driving/sample", methods=["GET"])
-def get_sample_incident_report():
-    """Returns sample Incident Report for Vehicle Track #27 & License Plate GJ01AB1234."""
-    report = get_sample_track27_incident_report()
-    return jsonify({
-        "success": True,
-        "report": report.to_dict(),
-        "html_summary": report.generate_html_summary()
-    })
-
-@app.route("/api/incidents/rash-driving", methods=["POST"])
-def log_rash_driving_incident():
-    """
-    Endpoint to create and issue a Rash Driving incident report from vehicle telemetry.
-    Expected JSON payload (optional overrides): track_id, license_plate, timestamp, speed_kmh, etc.
-    """
-    data = request.get_json(silent=True) or {}
-    event = create_rash_driving_event(
-        track_id=data.get("track_id", 27),
-        license_plate=data.get("license_plate", "GJ01AB1234"),
-        timestamp=data.get("timestamp", 14.25),
-        speed_kmh=data.get("speed_kmh", 84.5),
-        speed_limit_kmh=data.get("speed_limit_kmh", 50.0)
-    )
-    report = generate_incident_report(event)
-    return jsonify({
-        "success": True,
-        "report": report.to_dict(),
-        "html_summary": report.generate_html_summary()
-    }), 201
 
 @app.route("/api/incidents/<report_id>", methods=["GET"])
 def get_incident_report(report_id):
