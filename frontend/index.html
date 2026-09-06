@@ -39,12 +39,13 @@
         <!-- Video Processing Section -->
         <section class="dashboard-grid">
             
-            <!-- Left Card: Input Video -->
+            <!-- Left Card: Input Footage -->
             <div class="dashboard-card input-card">
                 <div class="card-header">
                     <h2>Input Traffic Footage</h2>
                     <span class="card-desc">Supported formats: MP4, MOV, AVI, MKV</span>
                 </div>
+                <div class="card-body">
                     <!-- Input Source Toggle (Video vs Photo) -->
                     <div class="input-source-toggle" style="display: flex; gap: 0.5rem; margin-bottom: 1.2rem; background: #F1F5F9; padding: 0.3rem; border-radius: 6px;">
                         <button type="button" id="tab-video" class="source-tab active" style="flex: 1; padding: 0.5rem; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; background: #FFFFFF; color: #1E293B; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.2s;">🎥 Video Analysis</button>
@@ -53,7 +54,6 @@
 
                     <!-- Drag and Drop Dropzone -->
                     <div id="dropzone" class="upload-dropzone">
-
                         <div class="dropzone-content">
                             <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
@@ -89,7 +89,6 @@
                             <option value="vehicle">Vehicle Identification & Number Plate (Phase 2.2)</option>
                             <option value="combined">Combined Analysis (Traffic + Road)</option>
                         </select>
-
                     </div>
                     
                     <!-- Camera Type Selector -->
@@ -313,7 +312,7 @@
 
                 <!-- 4. Phase 2.2 Still Photo / Image Analysis Section -->
                 <div id="photo-stats-section" style="display: none; margin-top: 1.5rem;">
-                    <div class="kpi-grid" style="grid-template-columns: repeat(4, 1fr);">
+                    <div class="kpi-grid" style="grid-template-columns: repeat(5, 1fr);">
                         <div class="kpi-card">
                             <span class="kpi-label">Vehicles Detected</span>
                             <span class="kpi-value" id="kpi-img-vehicles">-</span>
@@ -333,6 +332,11 @@
                             <span class="kpi-label">Unreadable Plates</span>
                             <span class="kpi-value" id="kpi-img-unreadable" style="color: #C53030;">-</span>
                             <span class="kpi-subtitle">Low res / occluded</span>
+                        </div>
+                        <div class="kpi-card">
+                            <span class="kpi-label">Potholes Detected</span>
+                            <span class="kpi-value" id="kpi-img-potholes" style="color: #DD6B20;">-</span>
+                            <span class="kpi-subtitle">Road surface damage</span>
                         </div>
                     </div>
 

@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from phase1.detector import Detector
 from phase1.models import TrackedObject
 from phase2.anpr import PlateDetector, OCREngine, PlateDetection, OCRResult
+from phase2.road_ai.pothole_detector import PotholeDetector
 from phase2.image_ai import image_config
 from phase2.image_ai.exif_parser import extract_image_exif_metadata
 
@@ -19,13 +20,18 @@ class ImageProcessor:
     """
     Dedicated Still Image Processor for UrbanPulse AI Platform.
     Performs vehicle detection, plate localization, real OCR text extraction,
-    spatial vehicle-plate association, and evidence snapshot generation on photographs.
+    pothole damage detection, spatial vehicle-plate association, and evidence snapshot generation on photographs.
     Strictly prohibits data fabrication.
     """
     def __init__(self):
         self.detector = Detector()
         self.plate_detector = PlateDetector()
         self.ocr_engine = OCREngine(use_easyocr=False)
+        try:
+            self.pothole_detector = PotholeDetector()
+        except Exception as e:
+            logger.warning(f"PotholeDetector initialization deferred or failed: {e}")
+            self.pothole_detector = None
 
     def process_image(self, input_image_path: str, output_image_path: str) -> Dict[str, Any]:
         """
@@ -93,6 +99,15 @@ class ImageProcessor:
             timestamp=0.0
         )
 
+        # 5. Detect Potholes / Road Damage
+        pothole_detections_list = []
+        if self.pothole_detector:
+            try:
+                p_dets, _ = self.pothole_detector.detect(frame, frame_number=1, timestamp=0.0)
+                pothole_detections_list = p_dets
+            except Exception as e:
+                logger.warning(f"Error during image pothole detection: {e}")
+
         vehicle_records: List[Dict[str, Any]] = []
         annotated_frame = frame.copy()
 
@@ -140,7 +155,7 @@ class ImageProcessor:
             veh_crop_url, plate_crop_url = self._save_image_evidence(event_id, vehicle_crop, plate_crop)
             event_seq += 1
 
-            # Draw annotations on image
+            # Draw vehicle & plate annotations on image
             annotated_frame = self._draw_vehicle_plate_annotation(
                 annotated_frame, veh, plate_det, reg_text, ocr_conf
             )
@@ -163,7 +178,24 @@ class ImageProcessor:
                 }
             })
 
-        # 5. Write Annotated Image Output
+        # Draw Pothole annotations on image
+        pothole_records = []
+        for p_idx, p_det in enumerate(pothole_detections_list, 1):
+            px1, py1, px2, py2 = [int(v) for v in p_det.bbox]
+            cv2.rectangle(annotated_frame, (px1, py1), (px2, py2), (0, 0, 255), 3)
+            p_label = f"POTHOLE ({int(p_det.confidence * 100)}%)"
+            (tw, th), _ = cv2.getTextSize(p_label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 2)
+            ty1 = max(0, py1 - th - 6)
+            cv2.rectangle(annotated_frame, (px1, ty1), (px1 + tw + 8, ty1 + th + 6), (0, 0, 255), -1)
+            cv2.putText(annotated_frame, p_label, (px1 + 4, ty1 + th + 2), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
+
+            pothole_records.append({
+                "pothole_index": p_idx,
+                "confidence": round(p_det.confidence, 2),
+                "bbox": [round(v, 1) for v in p_det.bbox]
+            })
+
+        # 6. Write Annotated Image Output
         output_dir = os.path.dirname(output_image_path)
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
@@ -190,9 +222,11 @@ class ImageProcessor:
                 "total_vehicles": len(tracked_vehicles),
                 "plates_detected": plates_detected_count,
                 "plates_read": plates_read_count,
-                "unreadable_plates": unreadable_count
+                "unreadable_plates": unreadable_count,
+                "potholes_detected": len(pothole_records)
             },
             "detections": vehicle_records,
+            "potholes": pothole_records,
             "elapsed_time": round(elapsed_time, 2)
         }
 

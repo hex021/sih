@@ -642,6 +642,10 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("kpi-img-plates").textContent = summary.plates_detected || 0;
         document.getElementById("kpi-img-read").textContent = summary.plates_read || 0;
         document.getElementById("kpi-img-unreadable").textContent = summary.unreadable_plates || 0;
+        const kpiPotholesEl = document.getElementById("kpi-img-potholes");
+        if (kpiPotholesEl) {
+            kpiPotholesEl.textContent = summary.potholes_detected || 0;
+        }
 
         // Genuine Metadata Banner
         const tsInfo = data.timestamp || {};
@@ -735,6 +739,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         statsDashboard.scrollIntoView({ behavior: "smooth" });
         removeFileBtn.style.display = "block";
+        updateProcessButtonText();
         processBtn.disabled = false;
         isProcessing = false;
     }
