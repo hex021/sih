@@ -13,10 +13,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const previewFilename = document.getElementById("preview-filename");
     const previewFilesize = document.getElementById("preview-filesize");
     const inputPreview = document.getElementById("input-preview");
+    const inputPreviewImg = document.getElementById("input-preview-img");
     const removeFileBtn = document.getElementById("remove-file-btn");
     
     const processBtn = document.getElementById("process-btn");
-    const analysisMode = document.getElementById("analysis-mode");
+    const cameraStatusBadge = document.getElementById("camera-status-badge");
     
     const outputIdle = document.getElementById("output-idle");
     const outputLoading = document.getElementById("output-loading");
@@ -38,61 +39,35 @@ document.addEventListener("DOMContentLoaded", () => {
     const statusLabel = document.querySelector(".status-label");
     const statusDot = document.querySelector(".status-dot");
 
-    // 2. Global State Variables
-    let selectedFile = null;
-    let isProcessing = false;
-    let inputSourceMode = "video"; // "video" or "image"
+    // Nav Switch Handling
+    const navAnalyze = document.getElementById("nav-analyze");
+    const navMap = document.getElementById("nav-map");
+    const dashboardGrid = document.querySelector(".dashboard-grid");
+    const mapView = document.getElementById("map-view");
 
-    const tabVideo = document.getElementById("tab-video");
-    const tabImage = document.getElementById("tab-image");
-    const dropzoneTitle = document.querySelector(".dropzone-title");
-    const cardDesc = document.querySelector(".input-card .card-desc");
-
-    if (tabVideo && tabImage) {
-        tabVideo.addEventListener("click", () => {
-            if (isProcessing) return;
-            inputSourceMode = "video";
-            tabVideo.classList.add("active");
-            tabImage.classList.remove("active");
-            tabVideo.style.background = "#FFFFFF";
-            tabVideo.style.color = "#1E293B";
-            tabImage.style.background = "transparent";
-            tabImage.style.color = "#64748B";
-            
-            fileInput.accept = ".mp4,.mov,.avi,.mkv";
-            cardDesc.textContent = "Supported formats: MP4, MOV, AVI, MKV";
-            if (dropzoneTitle) dropzoneTitle.textContent = "Drag & drop traffic video here";
-
-            const analysisModeSec = document.querySelector(".analysis-mode-container");
-            const cameraTypeSec = document.querySelector(".camera-type-container");
-            if (analysisModeSec) analysisModeSec.style.display = "block";
-            if (cameraTypeSec) cameraTypeSec.style.display = "block";
-
-            resetUI();
+    if (navAnalyze && navMap) {
+        navAnalyze.addEventListener("click", () => {
+            navAnalyze.classList.add("active");
+            navMap.classList.remove("active");
+            if (dashboardGrid) dashboardGrid.style.display = "grid";
+            if (mapView) mapView.style.display = "none";
         });
 
-        tabImage.addEventListener("click", () => {
-            if (isProcessing) return;
-            inputSourceMode = "image";
-            tabImage.classList.add("active");
-            tabVideo.classList.remove("active");
-            tabImage.style.background = "#FFFFFF";
-            tabImage.style.color = "#1E293B";
-            tabVideo.style.background = "transparent";
-            tabVideo.style.color = "#64748B";
-            
-            fileInput.accept = ".jpg,.jpeg,.png,.webp";
-            cardDesc.textContent = "Supported formats: JPG, JPEG, PNG, WEBP";
-            if (dropzoneTitle) dropzoneTitle.textContent = "Drag & drop traffic photo here";
-
-            const analysisModeSec = document.querySelector(".analysis-mode-container");
-            const cameraTypeSec = document.querySelector(".camera-type-container");
-            if (analysisModeSec) analysisModeSec.style.display = "none";
-            if (cameraTypeSec) cameraTypeSec.style.display = "none";
-
-            resetUI();
+        navMap.addEventListener("click", () => {
+            navMap.classList.add("active");
+            navAnalyze.classList.remove("active");
+            if (dashboardGrid) dashboardGrid.style.display = "none";
+            if (mapView) mapView.style.display = "grid";
+            if (window.UrbanPulseMap && typeof window.UrbanPulseMap.load === "function") {
+                window.UrbanPulseMap.load();
+            }
         });
     }
+
+    // 2. Global State Variables
+    let selectedFile = null;
+    let selectedFileType = "video"; // "video" or "image"
+    let isProcessing = false;
 
     // 3. Class Names Formatting Helper
 
@@ -112,64 +87,48 @@ document.addEventListener("DOMContentLoaded", () => {
             if (res.ok) {
                 const data = await res.json();
                 if (data.success) {
-                    deviceLabel.textContent = data.device;
-                    statusLabel.textContent = "AI Engine Ready";
-                    statusDot.style.backgroundColor = "var(--success)";
+                    if (deviceLabel) deviceLabel.textContent = data.device;
+                    if (statusLabel) statusLabel.textContent = "AI Engine Ready";
+                    if (statusDot) statusDot.style.backgroundColor = "var(--success)";
                     return;
                 }
             }
             throw new Error("Invalid response");
         } catch (e) {
-            deviceLabel.textContent = "Unavailable";
-            statusLabel.textContent = "API Service Offline";
-            statusDot.style.backgroundColor = "var(--danger)";
+            if (deviceLabel) deviceLabel.textContent = "Unavailable";
+            if (statusLabel) statusLabel.textContent = "API Service Offline";
+            if (statusDot) statusDot.style.backgroundColor = "var(--danger)";
             console.error("Failed to connect to backend service:", e);
         }
     }
 
-    // Bind Camera Type change helper to update descriptive caption text
-    const cameraTypeSelect = document.getElementById("camera-type");
-    const cameraTypeHelp = document.getElementById("camera-type-help");
-    if (cameraTypeSelect && cameraTypeHelp) {
-        cameraTypeSelect.addEventListener("change", () => {
-            if (cameraTypeSelect.value === "moving") {
-                cameraTypeHelp.textContent = "Vehicle-mounted camera. Line crossing is disabled; total unique counts emphasized.";
-            } else {
-                cameraTypeHelp.textContent = "Fixed camera / CCTV / junction traffic flow monitoring";
-            }
-        });
-    }
-
-    // 5. File Validation and Selection Helper
+    // 5. Unified File Validation and Selection Helper
     function handleFileSelection(file) {
         if (!file || isProcessing) return;
 
-        const allowedExtensions = inputSourceMode === "image"
-            ? ["jpg", "jpeg", "png", "webp"]
-            : ["mp4", "mov", "avi", "mkv"];
+        const imageExts = ["jpg", "jpeg", "png", "webp"];
+        const videoExts = ["mp4", "mov", "avi", "mkv"];
+        const allowedExtensions = [...imageExts, ...videoExts];
 
         const fileExt = file.name.split(".").pop().toLowerCase();
         
         if (!allowedExtensions.includes(fileExt)) {
-            if (inputSourceMode === "image") {
-                alert(`Unsupported image format: .${fileExt}\nPlease upload a JPG, JPEG, PNG, or WEBP photo.`);
-            } else {
-                alert(`Unsupported video format: .${fileExt}\nPlease upload an MP4, MOV, AVI, or MKV video.`);
-            }
+            alert(`Unsupported file format: .${fileExt}\nPlease upload a Video (MP4, MOV, AVI, MKV) or Photo (JPG, PNG, WEBP).`);
             return;
         }
 
         selectedFile = file;
+        const isImage = imageExts.includes(fileExt);
+        selectedFileType = isImage ? "image" : "video";
         
         // Populate preview meta
-        previewFilename.textContent = file.name;
-        previewFilesize.textContent = formatBytes(file.size);
+        if (previewFilename) previewFilename.textContent = file.name;
+        if (previewFilesize) previewFilesize.textContent = `${formatBytes(file.size)} • ${isImage ? "Photograph" : "Video"}`;
 
         // Load preview URL locally in browser
         const localUrl = URL.createObjectURL(file);
-        const inputPreviewImg = document.getElementById("input-preview-img");
 
-        if (inputSourceMode === "image") {
+        if (isImage) {
             if (inputPreview) inputPreview.style.display = "none";
             if (inputPreviewImg) {
                 inputPreviewImg.src = localUrl;
@@ -184,13 +143,28 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
+        // Camera status badge initial state
+        if (cameraStatusBadge) {
+            if (isImage) {
+                cameraStatusBadge.textContent = "N/A (Still Photo)";
+                cameraStatusBadge.style.background = "#F1F5F9";
+                cameraStatusBadge.style.color = "#475569";
+            } else {
+                cameraStatusBadge.textContent = "Auto-Detecting on Upload";
+                cameraStatusBadge.style.background = "#EFF6FF";
+                cameraStatusBadge.style.color = "#1D4ED8";
+            }
+        }
+
         // Toggle visibility
-        dropzone.style.display = "none";
-        previewZone.style.display = "flex";
+        if (dropzone) dropzone.style.display = "none";
+        if (previewZone) previewZone.style.display = "flex";
         
         // Enable processing trigger button
-        processBtn.disabled = false;
-        updateProcessButtonText();
+        if (processBtn) {
+            processBtn.disabled = false;
+            updateProcessButtonText();
+        }
     }
 
     function formatBytes(bytes, decimals = 1) {
@@ -206,203 +180,225 @@ document.addEventListener("DOMContentLoaded", () => {
     function resetUI() {
         if (isProcessing) return;
         selectedFile = null;
-        fileInput.value = "";
+        if (fileInput) fileInput.value = "";
         
         // Reset preview video and image players
         if (inputPreview) {
             inputPreview.src = "";
             inputPreview.style.display = "none";
         }
-        const inputPreviewImg = document.getElementById("input-preview-img");
         if (inputPreviewImg) {
             inputPreviewImg.src = "";
             inputPreviewImg.style.display = "none";
         }
         
         // Reset output player
-        outputVideo.src = "";
+        if (outputVideo) outputVideo.src = "";
         
         // Toggle view blocks
-        dropzone.style.display = "block";
-        previewZone.style.display = "none";
-        processBtn.disabled = true;
+        if (dropzone) dropzone.style.display = "block";
+        if (previewZone) previewZone.style.display = "none";
         
         // Restore output card defaults
-        outputIdle.style.display = "flex";
-        outputLoading.style.display = "none";
-        outputPlayerContainer.style.display = "none";
-        outputFooter.style.display = "none";
+        if (outputIdle) outputIdle.style.display = "flex";
+        if (outputLoading) outputLoading.style.display = "none";
+        if (outputPlayerContainer) outputPlayerContainer.style.display = "none";
+        if (outputFooter) outputFooter.style.display = "none";
         
         // Restore statistics empty state
-        statsEmpty.style.display = "block";
-        statsDashboard.style.display = "none";
+        if (statsEmpty) statsEmpty.style.display = "block";
+        if (statsDashboard) statsDashboard.style.display = "none";
         
+        if (cameraStatusBadge) {
+            cameraStatusBadge.textContent = "Auto-Detecting on Upload";
+            cameraStatusBadge.style.background = "#F1F5F9";
+            cameraStatusBadge.style.color = "#475569";
+        }
+
         // Re-enable trigger buttons
-        processBtn.disabled = true;
-        updateProcessButtonText();
-        removeFileBtn.style.display = "block";
+        if (processBtn) {
+            processBtn.disabled = true;
+            updateProcessButtonText();
+        }
+        if (removeFileBtn) removeFileBtn.style.display = "block";
     }
 
-    // 7. Event Listeners for Upload / Input
-    browseBtn.addEventListener("click", () => {
-        if (isProcessing) return;
-        fileInput.click();
-    });
-    
-    fileInput.addEventListener("change", (e) => {
-        if (isProcessing) return;
-        if (e.target.files.length > 0) {
-            handleFileSelection(e.target.files[0]);
-        }
-    });
-
-    // Drag & Drop event bindings
-    ["dragenter", "dragover"].forEach(eventName => {
-        dropzone.addEventListener(eventName, (e) => {
-            e.preventDefault();
+    // 7. Event Listeners for Upload / Input (Fixed Browse Files Click)
+    if (browseBtn) {
+        browseBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
             if (isProcessing) return;
-            dropzone.classList.add("dragover");
-        }, false);
-    });
+            if (fileInput) fileInput.click();
+        });
+    }
 
-    ["dragleave", "drop"].forEach(eventName => {
-        dropzone.addEventListener(eventName, (e) => {
-            e.preventDefault();
+    if (dropzone) {
+        dropzone.addEventListener("click", (e) => {
             if (isProcessing) return;
-            dropzone.classList.remove("dragover");
-        }, false);
-    });
+            if (e.target !== browseBtn && (!browseBtn || !browseBtn.contains(e.target))) {
+                if (fileInput) fileInput.click();
+            }
+        });
 
-    dropzone.addEventListener("drop", (e) => {
-        if (isProcessing) return;
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        if (files.length > 0) {
-            handleFileSelection(files[0]);
-        }
-    });
+        // Drag & Drop event bindings
+        ["dragenter", "dragover"].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                if (isProcessing) return;
+                dropzone.classList.add("dragover");
+            }, false);
+        });
 
-    removeFileBtn.addEventListener("click", () => {
-        if (isProcessing) return;
-        resetUI();
-    });
+        ["dragleave", "drop"].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                if (isProcessing) return;
+                dropzone.classList.remove("dragover");
+            }, false);
+        });
 
-    // 8. Processing Request Trigger (Video or Photo upload and analysis call)
-    processBtn.addEventListener("click", async () => {
-        if (!selectedFile || isProcessing) return;
+        dropzone.addEventListener("drop", (e) => {
+            if (isProcessing) return;
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            if (files && files.length > 0) {
+                handleFileSelection(files[0]);
+            }
+        });
+    }
 
-        // Enter Processing State UI
-        isProcessing = true;
-        processBtn.disabled = true;
-        processBtn.querySelector("span").textContent = "Processing...";
-        removeFileBtn.style.display = "none"; // Block user from cancelling mid-run
-        
-        outputIdle.style.display = "none";
-        outputPlayerContainer.style.display = "none";
-        outputFooter.style.display = "none";
-        outputLoading.style.display = "flex";
-        
-        // --- Photo / Image Analysis Path ---
-        if (inputSourceMode === "image") {
+    if (fileInput) {
+        fileInput.addEventListener("change", (e) => {
+            if (isProcessing) return;
+            if (e.target.files && e.target.files.length > 0) {
+                handleFileSelection(e.target.files[0]);
+            }
+        });
+    }
+
+    if (removeFileBtn) {
+        removeFileBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            if (isProcessing) return;
+            resetUI();
+        });
+    }
+
+    // 8. Processing Request Trigger (Unified Media Upload and Analysis Call)
+    if (processBtn) {
+        processBtn.addEventListener("click", async () => {
+            if (!selectedFile || isProcessing) return;
+
+            // Enter Processing State UI
+            isProcessing = true;
+            processBtn.disabled = true;
+            processBtn.querySelector("span").textContent = "Processing...";
+            if (removeFileBtn) removeFileBtn.style.display = "none";
+            
+            if (outputIdle) outputIdle.style.display = "none";
+            if (outputPlayerContainer) outputPlayerContainer.style.display = "none";
+            if (outputFooter) outputFooter.style.display = "none";
+            if (outputLoading) outputLoading.style.display = "flex";
+
+            if (cameraStatusBadge && selectedFileType === "video") {
+                cameraStatusBadge.textContent = "Detecting Motion State...";
+            }
+
+            const busIdSelect = document.getElementById("bus-id");
             const formData = new FormData();
+            formData.append("media", selectedFile);
+            formData.append("video", selectedFile);
             formData.append("image", selectedFile);
+            formData.append("mode", "unified");
+            if (busIdSelect) {
+                formData.append("bus_id", busIdSelect.value);
+            }
 
             try {
-                const response = await fetch("/api/analyze-image", {
+                const response = await fetch("/api/analyze", {
                     method: "POST",
                     body: formData
                 });
 
                 if (!response.ok) {
                     const errData = await response.json();
-                    throw new Error(errData.error || "Failed to process image");
+                    throw new Error(errData.error || "Failed to process media file");
                 }
 
                 const data = await response.json();
                 if (data.success) {
-                    // Display annotated output image in player container
-                    outputPlayerContainer.innerHTML = `<img src="${data.image.output_url}" style="max-width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--border-color);" alt="Annotated Image Analysis">`;
-                    downloadBtn.href = data.image.output_url;
-                    downloadBtn.download = "urbanpulse_image_analysis.jpg";
-                    downloadBtn.innerHTML = `
-                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                        </svg>
-                        Download Annotated Image
-                    `;
-                    
-                    outputLoading.style.display = "none";
-                    outputPlayerContainer.style.display = "flex";
-                    outputFooter.style.display = "block";
+                    // Update Camera Motion Badge Status Text from Backend Result
+                    if (cameraStatusBadge) {
+                        if (data.source_type === "image" || selectedFileType === "image") {
+                            cameraStatusBadge.textContent = "N/A (Still Photo)";
+                            cameraStatusBadge.style.background = "#F1F5F9";
+                            cameraStatusBadge.style.color = "#475569";
+                        } else if (data.camera_mode === "moving") {
+                            cameraStatusBadge.textContent = "MOVING (Fleet Camera)";
+                            cameraStatusBadge.style.background = "#FFEDD5";
+                            cameraStatusBadge.style.color = "#C2410C";
+                        } else {
+                            cameraStatusBadge.textContent = "STATIONARY (Fixed CCTV)";
+                            cameraStatusBadge.style.background = "#DBEAFE";
+                            cameraStatusBadge.style.color = "#1D4ED8";
+                        }
+                    }
 
-                    renderPhotoDashboard(data);
+                    // Render output player / image viewer
+                    if (data.source_type === "image" || selectedFileType === "image") {
+                        const imgUrl = (data.image && data.image.output_url) ? data.image.output_url : data.video_url;
+                        if (outputPlayerContainer) {
+                            outputPlayerContainer.innerHTML = `<img src="${imgUrl}" style="max-width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--border-color);" alt="Annotated Image Analysis">`;
+                        }
+                        if (downloadBtn) {
+                            downloadBtn.href = imgUrl;
+                            downloadBtn.download = "urbanpulse_image_analysis.jpg";
+                            downloadBtn.innerHTML = `
+                                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                </svg>
+                                Download Annotated Image
+                            `;
+                        }
+                    } else {
+                        if (outputPlayerContainer) {
+                            outputPlayerContainer.innerHTML = `<video id="output-video" controls playsinline src="${data.video_url}"></video>`;
+                        }
+                        if (downloadBtn) {
+                            downloadBtn.href = data.download_url;
+                            downloadBtn.download = "urbanpulse_processed.mp4";
+                            downloadBtn.innerHTML = `
+                                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                                </svg>
+                                Download Processed Video
+                            `;
+                        }
+                    }
+                    
+                    if (outputLoading) outputLoading.style.display = "none";
+                    if (outputPlayerContainer) outputPlayerContainer.style.display = "flex";
+                    if (outputFooter) outputFooter.style.display = "block";
+
+                    if (data.source_type === "image" || selectedFileType === "image") {
+                        renderPhotoDashboard(data);
+                    } else {
+                        renderTelemetryDashboard(data);
+                    }
+
+                    if (window.UrbanPulseMap && typeof window.UrbanPulseMap.load === "function") {
+                        window.UrbanPulseMap.load();
+                    }
                 } else {
-                    throw new Error(data.error || "Image analysis failed");
+                    throw new Error(data.error || "Analysis failed");
                 }
             } catch (e) {
-                console.error("Image Analysis Pipeline Error:", e);
-                alert("Error during image processing: " + e.message);
+                console.error("Media Analysis Pipeline Error:", e);
+                alert("Error during media processing: " + e.message);
                 resetUI();
             }
-            return;
-        }
-
-        // --- Existing Video Analysis Path (Frozen & Intact) ---
-        const mode = analysisMode.value;
-        const cameraMode = document.getElementById("camera-type").value;
-        const formData = new FormData();
-        formData.append("video", selectedFile);
-        formData.append("mode", mode);
-        formData.append("camera_mode", cameraMode);
-
-        try {
-            const response = await fetch("/api/analyze", {
-                method: "POST",
-                body: formData
-            });
-
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error || "Failed to process video");
-            }
-
-            const data = await response.json();
-            if (data.success) {
-                // Populate Output Player & Download URL
-                outputPlayerContainer.innerHTML = `<video id="output-video" controls playsinline src="${data.video_url}"></video>`;
-                downloadBtn.href = data.download_url;
-                downloadBtn.download = "urbanpulse_processed.mp4";
-                downloadBtn.innerHTML = `
-                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                    </svg>
-                    Download Processed Video
-                `;
-                
-                // Show completed player frame
-                outputLoading.style.display = "none";
-                outputPlayerContainer.style.display = "flex";
-                outputFooter.style.display = "block";
-                
-                // Render statistics dashboard
-                renderTelemetryDashboard(data);
-            } else {
-                throw new Error(data.error || "Analysis failed");
-            }
-        } catch (e) {
-
-            console.error("Analysis Pipeline Error:", e);
-            alert(`Analysis Failed:\n${e.message || "The video could not be processed."}`);
-            
-            // Revert state to selection
-            isProcessing = false;
-            outputLoading.style.display = "none";
-            outputIdle.style.display = "flex";
-            processBtn.disabled = false;
-            updateProcessButtonText();
-            removeFileBtn.style.display = "block";
-        }
-    });
+        });
+    }
 
     // 9. Telemetry Rendering Helper
     function renderTelemetryDashboard(data) {
@@ -410,21 +406,55 @@ document.addEventListener("DOMContentLoaded", () => {
         statsEmpty.style.display = "none";
         statsDashboard.style.display = "block";
 
-        const mode = data.mode || "traffic";
+        const kpiGps = document.getElementById("kpi-gps");
+        if (kpiGps) kpiGps.textContent = "Simulated";
+
+        if (data.bandwidth) {
+            const videoBytes = data.bandwidth.video_bytes || 0;
+            const eventsBytes = data.bandwidth.events_bytes || 0;
+            const reductionPct = videoBytes > 0
+                ? ((1 - eventsBytes / videoBytes) * 100).toFixed(2)
+                : "0.00";
+            const videoMB = (videoBytes / (1024 * 1024)).toFixed(1);
+            const eventsKB = (eventsBytes / 1024).toFixed(1);
+
+            const bandwidthText = `Bandwidth saved: ${reductionPct}% — ${videoMB} MB video vs ${eventsKB} KB events transmitted`;
+            let bandwidthEl = document.getElementById("kpi-bandwidth");
+            if (!bandwidthEl) {
+                bandwidthEl = document.createElement("div");
+                bandwidthEl.id = "kpi-bandwidth";
+                bandwidthEl.style.cssText = "margin-top: 0.8rem; padding: 0.6rem 1rem; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.4); color: #22c55e; border-radius: 6px; font-weight: 600; font-size: 0.9rem;";
+                if (statsDashboard) statsDashboard.prepend(bandwidthEl);
+            }
+            bandwidthEl.textContent = bandwidthText;
+        }
+
+        const mode = data.mode || "unified";
         
         // Hide/Show sections based on mode
         const trafficSection = document.getElementById("traffic-stats-section");
         const roadSection = document.getElementById("road-stats-section");
+        const vehicleSection = document.getElementById("vehicle-stats-section");
+        const photoSection = document.getElementById("photo-stats-section");
+
+        if (photoSection) photoSection.style.display = "none";
         
-        if (mode === "traffic") {
-            trafficSection.style.display = "block";
-            roadSection.style.display = "none";
-        } else if (mode === "road") {
-            trafficSection.style.display = "none";
-            roadSection.style.display = "block";
-        } else if (mode === "combined") {
-            trafficSection.style.display = "block";
-            roadSection.style.display = "block";
+        // In unified / combined mode, show ALL sections simultaneously
+        if (trafficSection) trafficSection.style.display = "block";
+        if (roadSection) roadSection.style.display = "block";
+        if (vehicleSection) vehicleSection.style.display = "block";
+
+        // Update Camera Motion Badge Status Text
+        const camStatusText = document.getElementById("camera-motion-status-text");
+        const camModeVal = data.camera_mode || "stationary";
+        if (camStatusText) {
+            if (camModeVal === "moving") {
+                camStatusText.textContent = "MOVING (Vehicle-Mounted Fleet Camera)";
+                camStatusText.style.color = "#DD6B20";
+            } else {
+                camStatusText.textContent = "STATIONARY (Fixed Junction CCTV)";
+                camStatusText.style.color = "#2B6CB0";
+            }
         }
 
         // --- Populate Traffic AI Dashboard ---
@@ -491,91 +521,120 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // --- Populate Road AI Dashboard ---
-        if (mode === "road" || mode === "combined") {
-            const potholeCount = (data.summary && data.summary.potholes) || 0;
-            document.getElementById("kpi-potholes").textContent = potholeCount;
+        if (mode === "road" || mode === "combined" || mode === "unified") {
+            const potholeCount = (data.summary && data.summary.total_potholes !== undefined)
+                ? data.summary.total_potholes
+                : ((data.summary && data.summary.potholes) || (data.potholes ? data.potholes.count : 0));
+            
+            const kpiPotholesEl = document.getElementById("kpi-potholes");
+            if (kpiPotholesEl) kpiPotholesEl.textContent = potholeCount;
             
             const potholesTableBody = document.querySelector("#potholes-table tbody");
-            potholesTableBody.innerHTML = "";
-            
-            if (data.events && data.events.length > 0) {
-                data.events.forEach(event => {
+            if (potholesTableBody) {
+                potholesTableBody.innerHTML = "";
+                
+                const events = data.events || (data.potholes ? data.potholes.events : []);
+                if (events && events.length > 0) {
+                    events.forEach(event => {
+                        const tr = document.createElement("tr");
+                        const sec = event.timestamp || 0.0;
+                        const m = Math.floor(sec / 60);
+                        const s = Math.floor(sec % 60);
+                        const ms = Math.floor((sec % 1) * 100);
+                        const formattedTime = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+                        
+                        const snapshotUrl = (event.media && event.media.snapshot) ? event.media.snapshot : "#";
+
+                        tr.innerHTML = `
+                            <td><code>${event.event_id}</code></td>
+                            <td><span class="category-pill" style="background-color: var(--danger-light); color: var(--danger);">POTHOLE</span></td>
+                            <td>${formattedTime}</td>
+                            <td>${Math.round(event.confidence * 100)}%</td>
+                            <td><a href="${snapshotUrl}" target="_blank" class="btn btn-secondary" style="padding: 0.2rem 0.5rem; font-size: 0.75rem; display: inline-flex; align-items: center; justify-content: center; height: auto;">View Snapshot</a></td>
+                        `;
+                        potholesTableBody.appendChild(tr);
+                    });
+                } else {
                     const tr = document.createElement("tr");
-                    const sec = event.timestamp || 0.0;
-                    const m = Math.floor(sec / 60);
-                    const s = Math.floor(sec % 60);
-                    const ms = Math.floor((sec % 1) * 100);
-                    const formattedTime = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
-                    
-                    tr.innerHTML = `
-                        <td><code>${event.event_id}</code></td>
-                        <td><span class="category-pill" style="background-color: var(--danger-light); color: var(--danger);">POTHOLE</span></td>
-                        <td>${formattedTime}</td>
-                        <td>${Math.round(event.confidence * 100)}%</td>
-                        <td><a href="${event.media.snapshot}" target="_blank" class="btn btn-secondary" style="padding: 0.2rem 0.5rem; font-size: 0.75rem; display: inline-flex; align-items: center; justify-content: center; height: auto;">View Snapshot</a></td>
-                    `;
+                    tr.innerHTML = `<td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No potholes detected in this video.</td>`;
                     potholesTableBody.appendChild(tr);
-                });
-            } else {
-                const tr = document.createElement("tr");
-                tr.innerHTML = `<td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No potholes detected in this video.</td>`;
-                potholesTableBody.appendChild(tr);
+                }
             }
         }
         
         // --- Populate Phase 2.2 Vehicle Identification & ANPR Dashboard ---
         const vehicleStatsSection = document.getElementById("vehicle-stats-section");
-        if (mode === "vehicle" || mode === "anpr") {
-            vehicleStatsSection.style.display = "block";
+        if (mode === "vehicle" || mode === "anpr" || mode === "unified" || mode === "combined") {
+            if (vehicleStatsSection) vehicleStatsSection.style.display = "block";
             
             const summary = data.summary || {};
-            document.getElementById("kpi-anpr-total").textContent = summary.total_vehicles || 0;
-            document.getElementById("kpi-anpr-read").textContent = summary.plates_read || 0;
-            document.getElementById("kpi-anpr-unreadable").textContent = summary.unreadable_plates || 0;
-            document.getElementById("kpi-anpr-unique").textContent = summary.unique_tracks || 0;
+            const anprSummary = data.anpr ? data.anpr.summary : {};
+            
+            const totalVeh = summary.total_vehicles || anprSummary.total_vehicles || 0;
+            const readPlates = summary.anpr_readable_plates !== undefined ? summary.anpr_readable_plates : (summary.plates_read || anprSummary.plates_read || 0);
+            const unreadablePlates = (totalVeh - readPlates) >= 0 ? (totalVeh - readPlates) : (summary.unreadable_plates || 0);
+
+            const elTotal = document.getElementById("kpi-anpr-total");
+            const elRead = document.getElementById("kpi-anpr-read");
+            const elUnread = document.getElementById("kpi-anpr-unreadable");
+            const elUnique = document.getElementById("kpi-anpr-unique");
+
+            if (elTotal) elTotal.textContent = totalVeh;
+            if (elRead) elRead.textContent = readPlates;
+            if (elUnread) elUnread.textContent = unreadablePlates;
+            if (elUnique) elUnique.textContent = totalVeh;
             
             const vehiclesTableBody = document.querySelector("#vehicles-anpr-table tbody");
-            vehiclesTableBody.innerHTML = "";
-            
-            const records = data.vehicle_records || [];
-            if (records.length > 0) {
-                records.forEach(rec => {
-                    const tr = document.createElement("tr");
-                    const sec = rec.timestamp || 0.0;
-                    const m = Math.floor(sec / 60);
-                    const s = Math.floor(sec % 60);
-                    const formattedTime = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-                    
-                    const isReadable = rec.number_plate.text !== "UNREADABLE";
-                    const plateDisplay = isReadable
-                        ? `<span class="plate-number">${rec.number_plate.text}</span>`
-                        : `<span style="color: var(--text-secondary); font-style: italic;">UNREADABLE</span>`;
+            if (vehiclesTableBody) {
+                vehiclesTableBody.innerHTML = "";
+                
+                const records = data.vehicle_records || (data.anpr ? data.anpr.records : []);
+                if (records && records.length > 0) {
+                    records.forEach(rec => {
+                        const tr = document.createElement("tr");
+                        const sec = rec.timestamp || 0.0;
+                        const m = Math.floor(sec / 60);
+                        const s = Math.floor(sec % 60);
+                        const formattedTime = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
                         
-                    const vehConf = Math.round(rec.vehicle.detection_confidence * 100);
-                    const plateConf = Math.round(rec.number_plate.plate_detection_confidence * 100);
-                    const ocrConf = Math.round(rec.number_plate.ocr_confidence * 100);
-                    
-                    const vehSnap = rec.media.vehicle_snapshot || "#";
-                    const plateSnap = rec.media.plate_snapshot || vehSnap;
-                    
-                    tr.innerHTML = `
-                        <td><strong>#${rec.vehicle.track_id}</strong></td>
-                        <td><span class="category-pill">${rec.vehicle.type}</span></td>
-                        <td>${plateDisplay}</td>
-                        <td>${vehConf}%</td>
-                        <td>${plateConf}%</td>
-                        <td>${ocrConf}%</td>
-                        <td>${formattedTime}</td>
-                        <td>
-                            <button type="button" class="btn btn-secondary view-evidence-btn" 
-                                data-veh="${vehSnap}" data-plate="${plateSnap}" data-reg="${rec.number_plate.text}" data-track="${rec.vehicle.track_id}"
-                                style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">
-                                View Evidence
-                            </button>
-                        </td>
-                    `;
+                        const regText = (rec.number_plate && rec.number_plate.text) ? rec.number_plate.text : rec.registration_number;
+                        const isReadable = regText && regText !== "UNREADABLE";
+                        const plateDisplay = isReadable
+                            ? `<span class="plate-number">${regText}</span>`
+                            : `<span style="color: var(--text-secondary); font-style: italic;">UNREADABLE</span>`;
+                            
+                        const vehType = (rec.vehicle && rec.vehicle.type) ? rec.vehicle.type : (rec.vehicle_type || "VEHICLE");
+                        const trackId = (rec.vehicle && rec.vehicle.track_id) ? rec.vehicle.track_id : (rec.track_id || "-");
+                        const vehConf = Math.round(((rec.vehicle && rec.vehicle.detection_confidence) ? rec.vehicle.detection_confidence : (rec.vehicle_confidence || 0.90)) * 100);
+                        const plateConf = Math.round(((rec.number_plate && rec.number_plate.plate_detection_confidence) ? rec.number_plate.plate_detection_confidence : (rec.plate_detection_confidence || 0.85)) * 100);
+                        const ocrConf = Math.round(((rec.number_plate && rec.number_plate.ocr_confidence) ? rec.number_plate.ocr_confidence : (rec.ocr_confidence || 0.0)) * 100);
+                        
+                        const vehSnap = (rec.media && rec.media.vehicle_snapshot) ? rec.media.vehicle_snapshot : (rec.vehicle_crop_url || "#");
+                        const plateSnap = (rec.media && rec.media.plate_snapshot) ? rec.media.plate_snapshot : (rec.plate_crop_url || vehSnap);
+                        
+                        tr.innerHTML = `
+                            <td><strong>#${trackId}</strong></td>
+                            <td><span class="category-pill">${vehType}</span></td>
+                            <td>${plateDisplay}</td>
+                            <td>${vehConf}%</td>
+                            <td>${plateConf}%</td>
+                            <td>${ocrConf}%</td>
+                            <td>${formattedTime}</td>
+                            <td>
+                                <button type="button" class="btn btn-secondary view-evidence-btn" 
+                                    data-veh="${vehSnap}" data-plate="${plateSnap}" data-reg="${regText}" data-track="${trackId}"
+                                    style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+                                    View Evidence
+                                </button>
+                            </td>
+                        `;
+                        vehiclesTableBody.appendChild(tr);
+                    });
+                } else {
+                    const tr = document.createElement("tr");
+                    tr.innerHTML = `<td colspan="8" style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No vehicles identified.</td>`;
                     vehiclesTableBody.appendChild(tr);
-                });
+                }
                 
                 // Add event listeners for evidence viewer buttons
                 document.querySelectorAll(".view-evidence-btn").forEach(btn => {
@@ -604,15 +663,29 @@ document.addEventListener("DOMContentLoaded", () => {
                         incidentModal.style.display = "flex";
                     });
                 });
-            } else {
-                const tr = document.createElement("tr");
-                tr.innerHTML = `<td colspan="8" style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No vehicles identified.</td>`;
-                vehiclesTableBody.appendChild(tr);
             }
         } else {
             if (vehicleStatsSection) vehicleStatsSection.style.display = "none";
         }
         
+        // --- Populate Performance Telemetry Grid ---
+        const perf = data.performance || {};
+        const elInputRes = document.getElementById("perf-input-res");
+        const elProcRes = document.getElementById("perf-process-res");
+        const elSourceFps = document.getElementById("perf-source-fps");
+        const elTotalFrames = document.getElementById("perf-total-frames");
+        const elDevice = document.getElementById("perf-device");
+        const elAvgFps = document.getElementById("perf-avg-fps");
+        const elElapsed = document.getElementById("perf-elapsed");
+
+        if (elInputRes) elInputRes.textContent = perf.resolution || data.input_resolution || "Auto (Adapted)";
+        if (elProcRes) elProcRes.textContent = data.processing_resolution || "640x640 (YOLO)";
+        if (elSourceFps) elSourceFps.textContent = data.source_fps ? `${data.source_fps} FPS` : "30.0 FPS";
+        if (elTotalFrames) elTotalFrames.textContent = perf.total_frames || data.total_frames || "-";
+        if (elDevice) elDevice.textContent = perf.device || data.device || "CPU";
+        if (elAvgFps) elAvgFps.textContent = perf.avg_fps ? `${perf.avg_fps} FPS` : (data.avg_fps ? `${data.avg_fps} FPS` : "-");
+        if (elElapsed) elElapsed.textContent = perf.elapsed_time ? `${perf.elapsed_time}s` : (data.elapsed_time ? `${data.elapsed_time}s` : "-");
+
         // Smoothly scroll to telemetry dashboard
         statsDashboard.scrollIntoView({ behavior: "smooth" });
         
@@ -747,26 +820,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // 11. Start Status Check on Page Load
     checkSystemStatus();
 
-    // Mode dropdown change listener
-    analysisMode.addEventListener("change", () => {
-        updateProcessButtonText();
-    });
-
     function updateProcessButtonText() {
         if (isProcessing) return;
-        if (inputSourceMode === "image") {
-            processBtn.querySelector("span").textContent = "Analyze Image";
-            return;
-        }
-        const mode = analysisMode.value;
-        if (mode === "traffic") {
-            processBtn.querySelector("span").textContent = "Analyze Traffic";
-        } else if (mode === "road") {
-            processBtn.querySelector("span").textContent = "Analyze Road Condition";
-        } else if (mode === "vehicle") {
-            processBtn.querySelector("span").textContent = "Analyze Vehicle Identification & Plates";
-        } else if (mode === "combined") {
-            processBtn.querySelector("span").textContent = "Analyze Combined System";
+        if (processBtn && processBtn.querySelector("span")) {
+            processBtn.querySelector("span").textContent = "Process Media";
         }
     }
 

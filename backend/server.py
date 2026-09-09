@@ -14,6 +14,8 @@ from phase1 import utils
 from phase2.road_ai.pothole_pipeline import run_road_pipeline
 from phase2.road_ai.combined_pipeline import run_combined_pipeline
 from phase2.anpr.anpr_pipeline import run_anpr_pipeline
+from phase2.unified_pipeline import run_unified_pipeline
+from backend import db
 from phase2.image_ai import (
     ImageProcessor,
     ALLOWED_IMAGE_EXTENSIONS,
@@ -37,6 +39,8 @@ FRONTEND_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", 
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROCESSED_FOLDER, exist_ok=True)
+
+db.init_db()
 
 # Initialize logger
 logger = utils.setup_logger("SIH_Server")
@@ -203,29 +207,61 @@ def analyze_image():
 
 
 @app.route("/api/analyze", methods=["POST"])
-def analyze_video():
+def analyze_media():
     """
-    Endpoint to receive an uploaded traffic video, process it using the existing
-    YOLO tracking pipeline, convert the output to H.264 format, and return telemetry stats.
+    Unified Endpoint to receive an uploaded media file (video or photograph),
+    automatically detect file type, execute corresponding AI analysis pipeline,
+    and return telemetry stats.
     """
-    # Run routine file cleanup
     cleanup_old_files()
     
-    # 1. Validate request
-    if "video" not in request.files:
-        return jsonify({"success": False, "error": "No video file provided"}), 400
-        
-    file = request.files["video"]
-    if file.filename == "":
-        return jsonify({"success": False, "error": "Empty filename provided"}), 400
-        
-    if not allowed_file(file.filename):
-        return jsonify({"success": False, "error": "Unsupported video format. Allowed formats: MP4, MOV, AVI, MKV"}), 400
-        
-    # 2. Generate unique filenames
-    file_id = str(uuid.uuid4())[:8]
+    # 1. Extract uploaded file from request keys ('media', 'file', 'video', 'image')
+    file = None
+    for key in ["media", "file", "video", "image"]:
+        if key in request.files:
+            file = request.files[key]
+            break
+
+    if not file or file.filename == "":
+        return jsonify({"success": False, "error": "No media file provided"}), 400
+
     ext = os.path.splitext(file.filename)[1].lower()
     
+    # 2. Check if uploaded file is a Still Photograph
+    if ext in ALLOWED_IMAGE_EXTENSIONS:
+        file_id = str(uuid.uuid4())[:8]
+        input_filename = f"{file_id}_image_input{ext}"
+        output_filename = f"{file_id}_urbanpulse_image_analysis.jpg"
+
+        input_path = os.path.join(UPLOAD_FOLDER, input_filename)
+        output_path = os.path.join(IMAGE_PROCESSED_FOLDER, output_filename)
+
+        try:
+            logger.info(f"Saving uploaded photo to {input_path}")
+            file.save(input_path)
+
+            processor = ImageProcessor()
+            result = processor.process_image(input_path, output_path)
+
+            if not result.get("success"):
+                return jsonify({"success": False, "error": result.get("error", "Image analysis failed")}), 500
+
+            # Add URL fallbacks for unified frontend display
+            result["video_url"] = result["image"]["output_url"]
+            result["download_url"] = result["image"]["output_url"]
+            result["mode"] = "unified"
+            result["camera_mode"] = "stationary"
+            return jsonify(result)
+
+        except Exception as e:
+            logger.error(f"Failed to process image upload: {e}")
+            return jsonify({"success": False, "error": f"Internal server error: {str(e)}"}), 500
+
+    # 3. Check if uploaded file is a Video
+    if not allowed_file(file.filename):
+        return jsonify({"success": False, "error": f"Unsupported file format '{ext}'. Allowed formats: MP4, MOV, AVI, MKV, JPG, JPEG, PNG, WEBP"}), 400
+        
+    file_id = str(uuid.uuid4())[:8]
     input_filename = f"{file_id}_input{ext}"
     raw_output_filename = f"{file_id}_raw_output.mp4"
     web_output_filename = f"{file_id}_output.mp4"
@@ -240,11 +276,19 @@ def analyze_video():
         file.save(input_path)
         
         # 4. Determine mode and execute corresponding pipeline
-        mode = request.form.get("mode", "traffic")
-        camera_mode = request.form.get("camera_mode", "stationary")
+        mode = request.form.get("mode", "unified")
+        camera_mode = request.form.get("camera_mode", "auto")
+        bus_id = request.form.get("bus_id", "BUS-01")
+        session_id = str(uuid.uuid4())[:8]
         logger.info(f"Analysis mode requested: {mode} | Camera mode: {camera_mode}")
         
-        if mode == "road":
+        if mode in ["unified", "auto", "default", ""] or not mode:
+            result = run_unified_pipeline(
+                input_path=input_path,
+                output_path=raw_output_path,
+                camera_mode=camera_mode
+            )
+        elif mode == "road":
             result = run_road_pipeline(
                 input_path=input_path,
                 output_path=raw_output_path,
@@ -308,21 +352,50 @@ def analyze_video():
             logger.info("Video conversion successful.")
             
         # 6. Format and return response based on mode
+        if mode in ["unified", "auto", "default", ""] or not mode:
+            result["video_url"] = f"/processed/{web_output_filename}"
+            result["download_url"] = f"/api/download/{web_output_filename}"
+            # Backwards-compatibility fields for legacy frontend callers
+            result["mode"] = "unified"
+            result["avg_fps"] = result.get("performance", {}).get("avg_fps", 0.0)
+            result["elapsed_time"] = result.get("performance", {}).get("elapsed_time", 0.0)
+            result["total_vehicles"] = result.get("summary", {}).get("total_vehicles", 0)
+            result["traffic_density"] = result.get("summary", {}).get("density_status", "LOW")
+            result["statistics"] = result.get("traffic", {}).get("counts", {})
+            return jsonify(result)
+
+        persisted = {"inserted": 0, "deduped": 0}
+        if mode in ["road", "combined"]:
+            for ev in result.get("events", []):
+                outcome = db.insert_event(ev.to_dict(), bus_id, session_id)
+                persisted[outcome] += 1
+
+        import json as _json
+        events_payload = _json.dumps(
+            [e.to_dict() for e in result.get("events", [])]
+        )
+
         response_data = {
             "success": True,
             "mode": mode,
             "camera_mode": camera_mode,
+            "bus_id": bus_id,
             "video_url": f"/processed/{web_output_filename}",
             "download_url": f"/api/download/{web_output_filename}",
-            "avg_fps": round(result["avg_fps"], 2),
-            "elapsed_time": round(result["elapsed_time"], 2),
+            "avg_fps": round(result.get("avg_fps", 0.0), 2),
+            "elapsed_time": round(result.get("elapsed_time", 0.0), 2),
             # Performance Telemetry
             "input_resolution": result.get("input_resolution"),
             "processing_resolution": result.get("processing_resolution"),
             "source_fps": result.get("source_fps"),
             "total_frames": result.get("total_frames"),
             "device": result.get("device"),
-            "inference_size": result.get("inference_size")
+            "inference_size": result.get("inference_size"),
+            "bandwidth": {
+                "video_bytes": os.path.getsize(input_path),
+                "events_bytes": len(events_payload.encode("utf-8")),
+            },
+            "persisted": persisted
         }
         
         # Add mode-specific statistics
@@ -358,6 +431,21 @@ def analyze_video():
     except Exception as e:
         logger.error(f"Failed to process video upload: {e}")
         return jsonify({"success": False, "error": f"Internal server error: {str(e)}"}), 500
+
+@app.route("/api/events", methods=["GET"])
+def api_events():
+    """Returns all stored events for the GIS map. Query param: ?type=POTHOLE"""
+    return jsonify({
+        "success": True,
+        "events": db.get_events(request.args.get("type")),
+        "stats": db.get_stats()
+    })
+
+@app.route("/api/events/reset", methods=["POST"])
+def api_events_reset():
+    """Clears the event store. Demo utility."""
+    db.reset_db()
+    return jsonify({"success": True})
 
 if __name__ == "__main__":
     logger.info("Starting SIH Server on http://localhost:5000")
