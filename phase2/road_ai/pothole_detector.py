@@ -17,7 +17,8 @@ class PotholeDetector:
     Performs YOLO inference, frame coordinate mapping, spatial-temporal
     event deduplication, and evidence snapshot generation.
     """
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str = None, gps_track=None):
+        self.gps_track = gps_track
         self.model_path = model_path if model_path else pothole_config.POTHOLE_MODEL_PATH
         
         # Verify model file exists before loading
@@ -45,7 +46,7 @@ class PotholeDetector:
             source=frame,
             conf=pothole_config.POTHOLE_CONFIDENCE_THRESHOLD,
             iou=pothole_config.POTHOLE_IOU_THRESHOLD,
-            imgsz=640,
+            imgsz=1280,
             device=self.device,
             verbose=False
         )
@@ -112,14 +113,19 @@ class PotholeDetector:
                     event_id=event_id,
                     timestamp=round(timestamp, 2),
                     confidence=round(det.confidence, 2),
-                    location=None, # Nullable for future GPS integration
+                    location=(self.gps_track.get_location(frame_number)
+                              if self.gps_track else None),
                     source={"camera": "uploaded_video", "vehicle_id": None},
                     media={
                         "frame": frame_number,
                         "snapshot": snapshot_relative_path,
                         "video": None
                     },
-                    sensor_data={"gps": None, "imu": None}
+                    sensor_data={
+                        "gps": (self.gps_track.get_location(frame_number)
+                                if self.gps_track else None),
+                        "imu": None
+                    }
                 )
                 
                 new_track = {

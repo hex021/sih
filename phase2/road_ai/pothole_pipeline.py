@@ -33,7 +33,14 @@ def run_road_pipeline(
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"Input video file not found: {input_path}")
         
-    detector = PotholeDetector(model_path=POTHOLE_MODEL_PATH)
+    from phase2.telemetry import GPSTrack
+    gps = GPSTrack()
+    if gps.available:
+        logger.info(f"GPS track loaded: {gps.total_frames()} frames (simulated)")
+    else:
+        logger.warning("No GPS track found — events will have location=None")
+
+    detector = PotholeDetector(model_path=POTHOLE_MODEL_PATH, gps_track=gps)
     logger.info(f"Pothole model successfully loaded from {POTHOLE_MODEL_PATH}")
     
     # Read video properties
@@ -136,14 +143,19 @@ def run_road_pipeline(
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
                             
             # Render Road AI HUD Overlay
-            cv2.rectangle(annotated_frame, (15, 15), (315, 100), (30, 30, 30), -1)
-            cv2.rectangle(annotated_frame, (15, 15), (315, 100), (0, 120, 255), 1)
+            cv2.rectangle(annotated_frame, (15, 15), (340, 120), (30, 30, 30), -1)
+            cv2.rectangle(annotated_frame, (15, 15), (340, 120), (0, 120, 255), 1)
             cv2.putText(annotated_frame, "ROAD QUALITY ANALYSIS", (25, 35),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
             cv2.putText(annotated_frame, f"Pothole Events: {len(all_events)}", (25, 60),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 120, 255), 1, cv2.LINE_AA)
             cv2.putText(annotated_frame, f"Frame: {frame_idx}/{total_frames}", (25, 85),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.35, (180, 180, 180), 1, cv2.LINE_AA)
+            loc = gps.get_location(frame_idx)
+            gps_text = (f"GPS: {loc['latitude']:.5f}, {loc['longitude']:.5f}"
+                        if loc else "GPS: N/A")
+            cv2.putText(annotated_frame, gps_text, (25, 105),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 180), 1, cv2.LINE_AA)
                         
             out.write(annotated_frame)
             
