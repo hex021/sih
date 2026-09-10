@@ -16,4 +16,6 @@ processed/
 *.db
 *.sqlite
 *.sqlite3
+data/
+.gsd/
 .DS_Store

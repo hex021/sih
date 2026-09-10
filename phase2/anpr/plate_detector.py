@@ -71,10 +71,13 @@ class PlateDetector:
         frame: np.ndarray,
         tracked_vehicles: List[TrackedObject],
         frame_number: int,
-        timestamp: float
+        timestamp: float,
+        top_n_vehicles: int = plate_config.DEFAULT_TOP_N_VEHICLES
     ) -> Dict[int, Tuple[PlateDetection, np.ndarray]]:
         """
         Detects number plates within tracked vehicle regions.
+        PHASE B requirement: Only attempts plate detection / OCR on the largest N vehicle boxes
+        per frame (nearest vehicles have the biggest plates). Parameterized with default N=3.
         Returns a mapping: track_id -> (PlateDetection, plate_crop_image).
         """
         results: Dict[int, Tuple[PlateDetection, np.ndarray]] = {}
@@ -83,11 +86,21 @@ class PlateDetector:
 
         h_frame, w_frame = frame.shape[:2]
 
-        for veh in tracked_vehicles:
-            # Skip non-vehicle objects (e.g. PERSON, RIDER)
-            if veh.class_name in ["PERSON", "RIDER"]:
-                continue
+        # 1. Filter non-vehicle objects (e.g. PERSON, RIDER)
+        valid_vehicles = [v for v in tracked_vehicles if v.class_name not in ["PERSON", "RIDER"]]
+        if not valid_vehicles:
+            return results
 
+        # 2. Sort by vehicle bounding box area in descending order (largest vehicles first)
+        def _veh_area(v: TrackedObject) -> float:
+            return max(0.0, float((v.bbox[2] - v.bbox[0]) * (v.bbox[3] - v.bbox[1])))
+
+        sorted_vehicles = sorted(valid_vehicles, key=_veh_area, reverse=True)
+
+        # 3. Restrict to top N vehicle boxes per frame
+        target_vehicles = sorted_vehicles[:top_n_vehicles]
+
+        for veh in target_vehicles:
             vx1, vy1, vx2, vy2 = [int(v) for v in veh.bbox]
             vx1, vy1 = max(0, vx1), max(0, vy1)
             vx2, vy2 = min(w_frame, vx2), min(h_frame, vy2)
@@ -131,6 +144,32 @@ class PlateDetector:
 
         return results
 
+
+    @staticmethod
+    def compute_crop_quality_score(plate_crop: np.ndarray, detector_conf: float = 0.8) -> float:
+        """
+        Evaluates plate crop quality using resolution, Laplacian variance sharpness, contrast, and detector confidence.
+        """
+        if plate_crop is None or plate_crop.size == 0:
+            return 0.0
+        h, w = plate_crop.shape[:2]
+        area = w * h
+        if area < 150 or detector_conf <= 0.0:
+            return 0.0
+
+
+        gray = cv2.cvtColor(plate_crop, cv2.COLOR_BGR2GRAY) if len(plate_crop.shape) == 3 else plate_crop
+        laplacian_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+        contrast = float(gray.std())
+
+        size_factor = min(1.0, area / 15000.0)
+        sharpness_factor = min(1.0, laplacian_var / 500.0)
+        contrast_factor = min(1.0, contrast / 64.0)
+
+        quality_score = (size_factor * 0.4) + (sharpness_factor * 0.3) + (contrast_factor * 0.1) + (detector_conf * 0.2)
+        return round(float(quality_score), 3)
+
+
     def _locate_plate_region_in_crop(self, vehicle_crop: np.ndarray) -> Tuple[Optional[Tuple[int, int, int, int]], float]:
         """
         Morphological & Rectangular Contour Analysis to detect license plate region inside vehicle crop.
@@ -170,7 +209,7 @@ class PlateDetector:
                 continue
 
             aspect_ratio = w / float(h + 1e-5)
-            if 2.2 <= aspect_ratio <= 6.5:
+            if (plate_config.PLATE_MIN_ASPECT_RATIO <= aspect_ratio <= 5.5) and h >= 6 and w >= 18:
                 # Plate location preference: lower 60% of vehicle crop
                 y_center_rel = (y + h / 2.0) / float(h_crop)
                 conf = 0.70 + (0.20 if y_center_rel > 0.35 else 0.05)
@@ -178,6 +217,7 @@ class PlateDetector:
                 if conf > best_conf:
                     best_conf = conf
                     best_box = (x, y, x + w, y + h)
+
 
         # Fallback: Lower central rectangle of vehicle crop if morphological detection misses
         if best_box is None and h_crop > 40 and w_crop > 60:

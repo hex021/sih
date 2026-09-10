@@ -59,28 +59,37 @@ class ANPRAggregator:
         vehicle_confidence: float
     ):
         """Adds an OCR observation for a vehicle track ID across frames."""
-        # Store vehicle crop in metadata if not already stored or higher confidence
+        from phase2.anpr.plate_detector import PlateDetector
+        quality_score = PlateDetector.compute_crop_quality_score(plate_crop, plate_det.confidence)
+
+        # Store vehicle crop in metadata if not already stored or higher crop quality score
         if track_id in self.track_metadata:
             meta = self.track_metadata[track_id]
-            if meta["best_vehicle_crop"] is None or vehicle_confidence > meta["max_confidence"]:
+            if meta["best_vehicle_crop"] is None or quality_score > meta.get("best_quality_score", 0.0):
                 meta["best_vehicle_crop"] = vehicle_crop.copy() if vehicle_crop is not None else None
+                meta["best_quality_score"] = quality_score
 
         self.track_candidates[track_id].append({
             "raw_ocr": ocr_res.raw_ocr,
             "normalized_text": ocr_res.normalized_text,
+            "plate": ocr_res.plate if ocr_res.plate else (ocr_res.normalized_text if ocr_res.is_valid_pattern else None),
+            "plate_status": ocr_res.plate_status if ocr_res.plate_status != "no_text" else ("validated" if ocr_res.is_valid_pattern else "no_text"),
             "ocr_confidence": ocr_res.ocr_confidence,
-            "plate_confidence": plate_det.confidence,
+            "plate_confidence": ocr_res.plate_confidence if ocr_res.plate_confidence > 0 else ocr_res.ocr_confidence,
             "vehicle_confidence": vehicle_confidence,
+            "quality_score": quality_score,
             "is_valid_pattern": ocr_res.is_valid_pattern,
             "frame_number": plate_det.frame_number,
             "timestamp": plate_det.timestamp,
             "vehicle_crop": vehicle_crop,
-            "plate_crop": plate_crop
+            "plate_crop": plate_crop,
+            "preprocessed_crop": ocr_res.preprocessed_crop
         })
 
     def finalize_vehicle_records(self, video_filename: Optional[str] = None) -> List[VehicleRecord]:
         """
         Processes all aggregated candidates per track ID and builds final deduplicated VehicleRecord list.
+        Applies C3 & C4: records outcome explicitly inside attrs (plate, plate_confidence, plate_status, ocr_raw).
         """
         records: List[VehicleRecord] = []
 
@@ -88,51 +97,69 @@ class ANPRAggregator:
             candidates = self.track_candidates.get(track_id, [])
 
             if not candidates:
-                # UNREADABLE Plate record
                 record = VehicleRecord(
                     track_id=track_id,
                     vehicle_type=meta["type"],
                     vehicle_confidence=meta["max_confidence"],
+                    plate=None,
                     registration_number="UNREADABLE",
+                    ocr_raw="",
                     raw_ocr="UNREADABLE",
+                    plate_confidence=0.0,
                     ocr_confidence=0.0,
+                    plate_status="no_text",
                     plate_detection_confidence=0.0,
                     timestamp=meta["first_timestamp"],
                     frame_number=meta["first_frame"]
                 )
-                # Save vehicle crop if available
                 if meta["best_vehicle_crop"] is not None:
-                    veh_snap_url, _ = self._save_evidence_snapshots(record.event_id, meta["best_vehicle_crop"], None)
+                    veh_snap_url, _, _, _ = self._save_evidence_snapshots(record.event_id, meta["best_vehicle_crop"], None, None)
                     record.media["vehicle_snapshot"] = veh_snap_url
                 records.append(record)
                 continue
 
-            # Select best registration candidate using temporal voting & confidence weights
             best_candidate = self._select_best_candidate(candidates)
 
-            reg_text = best_candidate["normalized_text"] if best_candidate["normalized_text"] else "UNREADABLE"
-            raw_text = best_candidate["raw_ocr"] if best_candidate["raw_ocr"] else "UNREADABLE"
+            # Strict C3 rejection: if not validated pattern or confidence < 0.4, plate is None
+            if best_candidate.get("plate_status") == "validated" and best_candidate.get("plate"):
+                reg_plate = best_candidate["plate"]
+                status = "validated"
+            else:
+                reg_plate = None
+                status = best_candidate.get("plate_status", "unreadable")
+                if status not in ["format_rejected", "low_confidence", "no_text"]:
+                    status = "format_rejected" if best_candidate.get("raw_ocr") else "no_text"
+
+            raw_text = best_candidate.get("raw_ocr", "")
+            active_conf = best_candidate.get("plate_confidence", best_candidate.get("ocr_confidence", 0.0))
 
             record = VehicleRecord(
                 track_id=track_id,
                 vehicle_type=meta["type"],
                 vehicle_confidence=meta["max_confidence"],
-                registration_number=reg_text,
-                raw_ocr=raw_text,
-                ocr_confidence=best_candidate["ocr_confidence"],
-                plate_detection_confidence=best_candidate["plate_confidence"],
+                plate=reg_plate,
+                registration_number=reg_plate if reg_plate else "UNREADABLE",
+                ocr_raw=raw_text,
+                raw_ocr=raw_text if raw_text else "UNREADABLE",
+                plate_confidence=active_conf,
+                ocr_confidence=active_conf,
+                plate_status=status,
+                plate_detection_confidence=best_candidate.get("plate_confidence", 0.0),
                 timestamp=best_candidate["timestamp"],
                 frame_number=best_candidate["frame_number"]
             )
 
-            # Save evidence snapshots for best observation frame
-            veh_snap_url, plate_snap_url = self._save_evidence_snapshots(
+            # Save evidence snapshots (both raw and preprocessed plate crops)
+            veh_snap_url, plate_snap_url, raw_snap_url, prep_snap_url = self._save_evidence_snapshots(
                 record.event_id,
-                best_candidate["vehicle_crop"] if best_candidate["vehicle_crop"] is not None else meta["best_vehicle_crop"],
-                best_candidate["plate_crop"]
+                best_candidate["vehicle_crop"] if best_candidate.get("vehicle_crop") is not None else meta["best_vehicle_crop"],
+                best_candidate.get("plate_crop"),
+                best_candidate.get("preprocessed_crop")
             )
             record.media["vehicle_snapshot"] = veh_snap_url
             record.media["plate_snapshot"] = plate_snap_url
+            record.media["raw_plate_snapshot"] = raw_snap_url
+            record.media["preproc_plate_snapshot"] = prep_snap_url
             record.media["video"] = video_filename
 
             records.append(record)
@@ -141,43 +168,65 @@ class ANPRAggregator:
 
     def _select_best_candidate(self, candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Temporal Voting Algorithm:
-        Groups candidates by normalized_text, ranks by valid Indian regex pattern match,
-        frequency count across frames, and combined confidence score.
+        Quality-Based Selection & Temporal Voting Algorithm:
+        1. Filters out unvalidated or empty candidates.
+        2. Groups candidates by validated plate string.
+        3. If any validated candidates exist with confidence >= 0.40, select consensus winner.
+        4. If no candidate validates, select representative unvalidated observation for evidence.
         """
-        valid_candidates = [c for c in candidates if c["normalized_text"] != "UNREADABLE" and len(c["normalized_text"]) >= 5]
-        if not valid_candidates:
-            return candidates[0]
+        # Validated candidates: must have plate string, is_valid_pattern=True, confidence >= 0.40
+        validated_candidates = [
+            c for c in candidates
+            if c.get("is_valid_pattern") and c.get("plate") and c.get("ocr_confidence", 0.0) >= 0.40
+        ]
 
-        # Group by normalized_text
+        if not validated_candidates:
+            # No candidate met full validation criteria (C3)
+            # Pick candidate with highest OCR confidence or crop quality score
+            best = max(candidates, key=lambda x: (x.get("ocr_confidence", 0.0), x.get("quality_score", 0.0)))
+            return best
+
+        # Group validated candidates by plate string
         text_groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        for c in valid_candidates:
-            text_groups[c["normalized_text"]].append(c)
+        for c in validated_candidates:
+            text_groups[c["plate"]].append(c)
 
         scored_groups = []
+        total_valid_obs = len(validated_candidates)
+
         for text, items in text_groups.items():
             freq = len(items)
-            max_item = max(items, key=lambda x: x["ocr_confidence"] + x["plate_confidence"])
-            pattern_bonus = 2.0 if max_item["is_valid_pattern"] else 0.5
-            total_score = (freq * 1.5) + (max_item["ocr_confidence"] * 2.0) + (max_item["plate_confidence"] * 1.0) + pattern_bonus
+            best_item = max(items, key=lambda x: (x.get("quality_score", 0.0), x.get("ocr_confidence", 0.0)))
+            consensus_ratio = freq / float(total_valid_obs)
 
-            scored_groups.append((total_score, max_item))
+            total_score = (freq * 2.0) + (consensus_ratio * 3.0) + (best_item.get("quality_score", 0.0) * 2.0)
 
-        scored_groups.sort(key=lambda x: x[0], reverse=True)
-        return scored_groups[0][1]
+            scored_groups.append({
+                "score": total_score,
+                "plate": text,
+                "freq": freq,
+                "ratio": consensus_ratio,
+                "item": best_item
+            })
+
+        scored_groups.sort(key=lambda x: x["score"], reverse=True)
+        return scored_groups[0]["item"]
 
     def _save_evidence_snapshots(
         self,
         event_id: str,
         vehicle_crop: Optional[np.ndarray],
-        plate_crop: Optional[np.ndarray]
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """Saves vehicle snapshot and plate crop image to processed events directory."""
+        plate_crop: Optional[np.ndarray],
+        preprocessed_crop: Optional[np.ndarray] = None
+    ) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+        """Saves vehicle snapshot, raw plate crop, and preprocessed plate crop to events directory."""
         event_folder = os.path.join(self.events_dir, event_id)
         os.makedirs(event_folder, exist_ok=True)
 
         veh_url = None
         plate_url = None
+        raw_url = None
+        prep_url = None
 
         if vehicle_crop is not None and vehicle_crop.size > 0:
             veh_path = os.path.join(event_folder, "vehicle.jpg")
@@ -186,7 +235,15 @@ class ANPRAggregator:
 
         if plate_crop is not None and plate_crop.size > 0:
             plate_path = os.path.join(event_folder, "plate.jpg")
+            raw_path = os.path.join(event_folder, "raw_plate.jpg")
             cv2.imwrite(plate_path, plate_crop)
+            cv2.imwrite(raw_path, plate_crop)
             plate_url = f"/processed/events/vehicle/{event_id}/plate.jpg"
+            raw_url = f"/processed/events/vehicle/{event_id}/raw_plate.jpg"
 
-        return veh_url, plate_url
+        if preprocessed_crop is not None and preprocessed_crop.size > 0:
+            prep_path = os.path.join(event_folder, "preprocessed_plate.jpg")
+            cv2.imwrite(prep_path, preprocessed_crop)
+            prep_url = f"/processed/events/vehicle/{event_id}/preprocessed_plate.jpg"
+
+        return veh_url, plate_url, raw_url, prep_url

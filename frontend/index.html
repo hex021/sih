@@ -3,22 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UrbanPulse — AI Traffic Intelligence Platform</title>
+    <title>NagarNetra — AI Urban Intelligence & Vision Platform</title>
     <!-- Import standard sans-serif font Inter from Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <!-- Professional Navigation Header -->
+    <!-- Navigation Header -->
     <header class="app-header">
         <div class="header-container">
             <div class="logo-zone">
-                <span class="logo-text">URBAN<span class="logo-accent">PULSE</span></span>
-                <span class="logo-subtitle">AI Road Intelligence</span>
+                <div class="logo-main-row">
+                    <span class="logo-symbol" title="NagarNetra Vision">👁</span>
+                    <span class="logo-text">NAGAR<span class="logo-accent">NETRA</span></span>
+                </div>
+                <span class="logo-subtitle">City Vision & Fleet Intelligence • AI Urban Mobility</span>
             </div>
             <div class="nav-zone" style="display: flex; gap: 0.5rem;">
                 <button type="button" id="nav-analyze" class="btn btn-secondary active">Edge Node</button>
@@ -27,9 +30,9 @@
             <div class="status-zone">
                 <div class="status-indicator">
                     <span class="status-dot"></span>
-                    <span class="status-label">AI Engine Ready</span>
+                    <span class="status-label">Active • AI Engine Ready</span>
                 </div>
-                <span class="phase-tag">Phase 1 Prototype</span>
+                <span class="phase-tag">NagarNetra Core</span>
             </div>
         </div>
     </header>
@@ -37,9 +40,10 @@
     <main class="app-main">
         <!-- Hero Section -->
         <section class="hero-section">
-            <h1>AI Traffic Detection & Tracking</h1>
-            <p>Upload local traffic footage to run the YOLO object tracking pipeline, calculate directional line-crossing counts, and classify road congestion density.</p>
+            <h1>NagarNetra — AI Mobility & Infrastructure Intelligence</h1>
+            <p>AI-Powered Mobile Urban Intelligence & Public Transport Fleet Surveillance Platform • Real-time vehicle identification, road hazard monitoring, and traffic analytics.</p>
         </section>
+
 
         <!-- Video Processing Section -->
         <section class="dashboard-grid">
@@ -274,8 +278,9 @@
                     <div class="detailed-counts-card" style="margin-top: 1.5rem;">
                         <div class="card-header">
                             <h3>Vehicle Identification & Number Plate Log</h3>
-                            <span class="card-desc">Spatial association, multi-frame OCR aggregation & visual evidence</span>
+                            <span class="card-desc">Spatial association, multi-frame OCR aggregation & visual evidence (Track ID = unique persistent identifier assigned during tracking)</span>
                         </div>
+
                         <div class="table-container">
                             <table class="telemetry-table" id="vehicles-anpr-table">
                                 <thead>
@@ -351,6 +356,30 @@
                                         <th>Plate Conf</th>
                                         <th>OCR Conf</th>
                                         <th>Evidence</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Dynamic rows inserted by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Pothole Detection Log for Still Image -->
+                    <div id="photo-pothole-card" class="detailed-counts-card" style="display: none; margin-top: 1.5rem;">
+                        <div class="card-header">
+                            <h3>Pothole Detection Log</h3>
+                            <span class="card-desc">Road surface hazards identified with snapshot evidence</span>
+                        </div>
+                        <div class="table-container">
+                            <table class="telemetry-table" id="photo-pothole-log-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Hazard Type</th>
+                                        <th>Confidence</th>
+                                        <th>Bounding Box</th>
+                                        <th>Evidence Snapshot</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -437,8 +466,6 @@
                 </div>
             </div>
         </div>
-    </main>
-
     </main>
 
     <footer class="app-footer">

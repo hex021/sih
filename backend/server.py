@@ -32,6 +32,8 @@ from phase2.road_ai.incident_generator import (
 )
 
 
+from werkzeug.utils import secure_filename
+
 # Initialize directories
 UPLOAD_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "uploads"))
 PROCESSED_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "processed"))
@@ -134,7 +136,7 @@ def download_file(filename):
         PROCESSED_FOLDER,
         secure_name,
         as_attachment=True,
-        download_name="urbanpulse_processed.mp4",
+        download_name="nagarnetra_processed.mp4",
         mimetype="video/mp4"
     )
 
@@ -183,7 +185,7 @@ def analyze_image():
 
     file_id = str(uuid.uuid4())[:8]
     input_filename = f"{file_id}_image_input{ext}"
-    output_filename = f"{file_id}_urbanpulse_image_analysis.jpg"
+    output_filename = f"{file_id}_nagarnetra_image_analysis.jpg"
 
     input_path = os.path.join(UPLOAD_FOLDER, input_filename)
     output_path = os.path.join(IMAGE_PROCESSED_FOLDER, output_filename)
@@ -231,7 +233,7 @@ def analyze_media():
     if ext in ALLOWED_IMAGE_EXTENSIONS:
         file_id = str(uuid.uuid4())[:8]
         input_filename = f"{file_id}_image_input{ext}"
-        output_filename = f"{file_id}_urbanpulse_image_analysis.jpg"
+        output_filename = f"{file_id}_nagarnetra_image_analysis.jpg"
 
         input_path = os.path.join(UPLOAD_FOLDER, input_filename)
         output_path = os.path.join(IMAGE_PROCESSED_FOLDER, output_filename)
@@ -255,14 +257,14 @@ def analyze_media():
 
         except Exception as e:
             logger.error(f"Failed to process image upload: {e}")
-            return jsonify({"success": False, "error": f"Internal server error: {str(e)}"}), 500
-
     # 3. Check if uploaded file is a Video
     if not allowed_file(file.filename):
         return jsonify({"success": False, "error": f"Unsupported file format '{ext}'. Allowed formats: MP4, MOV, AVI, MKV, JPG, JPEG, PNG, WEBP"}), 400
         
     file_id = str(uuid.uuid4())[:8]
-    input_filename = f"{file_id}_input{ext}"
+    safe_name = secure_filename(file.filename)
+    safe_ext = os.path.splitext(safe_name)[1].lower() if safe_name else ext
+    input_filename = f"{file_id}_input{safe_ext}"
     raw_output_filename = f"{file_id}_raw_output.mp4"
     web_output_filename = f"{file_id}_output.mp4"
     
@@ -334,9 +336,10 @@ def analyze_media():
             web_output_path
         ]
         
-        # Execute conversion
+        # Execute conversion with stdin=subprocess.DEVNULL for Windows handle safety
         conversion_result = subprocess.run(
             ffmpeg_cmd,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
@@ -344,36 +347,68 @@ def analyze_media():
         if conversion_result.returncode != 0:
             logger.warning("FFmpeg conversion failed. Falling back to raw OpenCV video.")
             # Fallback to raw output if FFmpeg is unavailable/fails
-            os.rename(raw_output_path, web_output_path)
+            if os.path.exists(raw_output_path):
+                try:
+                    import shutil
+                    shutil.move(raw_output_path, web_output_path)
+                except Exception as fallback_err:
+                    logger.warning(f"Fallback move failed: {fallback_err}")
         else:
             # Clean up the raw unconverted OpenCV video
             if os.path.exists(raw_output_path):
-                os.remove(raw_output_path)
+                try:
+                    os.remove(raw_output_path)
+                except Exception:
+                    pass
             logger.info("Video conversion successful.")
-            
+
+        persisted = {"inserted": 0, "deduped": 0}
+        events_dicts = []
+        if isinstance(result.get("events"), list):
+            for ev in result.get("events", []):
+                ev_d = ev.to_dict() if hasattr(ev, "to_dict") else (ev if isinstance(ev, dict) else {})
+                events_dicts.append(ev_d)
+                if mode in ["road", "combined", "unified", "auto", "default", ""] or not mode:
+                    outcome = db.insert_event(ev_d, bus_id, session_id)
+                    if outcome in persisted:
+                        persisted[outcome] += 1
+
+        import json as _json
+        try:
+            events_bytes = len(_json.dumps(events_dicts).encode("utf-8"))
+        except Exception:
+            events_bytes = 0
+
+        video_bytes = 0
+        if os.path.exists(input_path):
+            try:
+                video_bytes = os.path.getsize(input_path)
+            except Exception:
+                video_bytes = 0
+
+        bandwidth_info = {
+            "video_bytes": video_bytes,
+            "events_bytes": events_bytes
+        }
+
         # 6. Format and return response based on mode
         if mode in ["unified", "auto", "default", ""] or not mode:
             result["video_url"] = f"/processed/{web_output_filename}"
             result["download_url"] = f"/api/download/{web_output_filename}"
-            # Backwards-compatibility fields for legacy frontend callers
             result["mode"] = "unified"
-            result["avg_fps"] = result.get("performance", {}).get("avg_fps", 0.0)
-            result["elapsed_time"] = result.get("performance", {}).get("elapsed_time", 0.0)
-            result["total_vehicles"] = result.get("summary", {}).get("total_vehicles", 0)
-            result["traffic_density"] = result.get("summary", {}).get("density_status", "LOW")
-            result["statistics"] = result.get("traffic", {}).get("counts", {})
+            result["bus_id"] = bus_id
+            result["bandwidth"] = bandwidth_info
+            result["persisted"] = persisted
+            # Ensure performance sub-dict is populated for legacy/modern frontend compatibility
+            result["performance"] = {
+                "avg_fps": round(result.get("avg_fps", 0.0), 2),
+                "elapsed_time": round(result.get("elapsed_time", 0.0), 2),
+                "device": result.get("device", "CPU"),
+                "total_frames": result.get("total_frames", 0),
+                "resolution": result.get("input_resolution", "Auto")
+            }
             return jsonify(result)
 
-        persisted = {"inserted": 0, "deduped": 0}
-        if mode in ["road", "combined"]:
-            for ev in result.get("events", []):
-                outcome = db.insert_event(ev.to_dict(), bus_id, session_id)
-                persisted[outcome] += 1
-
-        import json as _json
-        events_payload = _json.dumps(
-            [e.to_dict() for e in result.get("events", [])]
-        )
 
         response_data = {
             "success": True,
@@ -391,46 +426,50 @@ def analyze_media():
             "total_frames": result.get("total_frames"),
             "device": result.get("device"),
             "inference_size": result.get("inference_size"),
-            "bandwidth": {
-                "video_bytes": os.path.getsize(input_path),
-                "events_bytes": len(events_payload.encode("utf-8")),
-            },
+            "bandwidth": bandwidth_info,
             "persisted": persisted
         }
         
-        # Add mode-specific statistics
+        # Add mode-specific statistics safely
         if mode in ["vehicle", "anpr"]:
-            response_data["vehicle_records"] = result["vehicle_records"]
-            response_data["summary"] = result["summary"]
+            response_data["vehicle_records"] = result.get("vehicle_records", [])
+            response_data["summary"] = result.get("summary", {})
         elif mode == "road":
-            response_data["events"] = [event.to_dict() for event in result["events"]]
+            events_raw = result.get("events", [])
+            response_data["events"] = [
+                ev.to_dict() if hasattr(ev, "to_dict") else ev for ev in events_raw
+            ]
             response_data["summary"] = {
-                "potholes": result["total_potholes"]
+                "potholes": result.get("total_potholes", len(events_raw))
             }
         elif mode == "combined":
-            response_data["traffic"] = result["traffic"]
-            response_data["statistics"] = result["statistics"]
-            response_data["total_vehicles"] = result["total_vehicles"]
-            response_data["total_persons"] = result["total_persons"]
-            response_data["traffic_density"] = result["traffic_density"]
-            response_data["events"] = [event.to_dict() for event in result["events"]]
+            response_data["traffic"] = result.get("traffic", {})
+            response_data["statistics"] = result.get("statistics", {})
+            response_data["total_vehicles"] = result.get("total_vehicles", 0)
+            response_data["total_persons"] = result.get("total_persons", 0)
+            response_data["traffic_density"] = result.get("traffic_density", "LOW")
+            events_raw = result.get("events", [])
+            response_data["events"] = [
+                ev.to_dict() if hasattr(ev, "to_dict") else ev for ev in events_raw
+            ]
             response_data["summary"] = {
-                "potholes": result["total_potholes"]
+                "potholes": result.get("total_potholes", len(events_raw))
             }
         else: # traffic
-            response_data["traffic"] = result["traffic"]
-            response_data["statistics"] = result["statistics"]
-            response_data["total_vehicles"] = result["total_vehicles"]
-            response_data["total_persons"] = result["total_persons"]
-            response_data["traffic_density"] = result["traffic_density"]
+            response_data["traffic"] = result.get("traffic", {})
+            response_data["statistics"] = result.get("statistics", {})
+            response_data["total_vehicles"] = result.get("total_vehicles", 0)
+            response_data["total_persons"] = result.get("total_persons", 0)
+            response_data["traffic_density"] = result.get("traffic_density", "LOW")
 
-            
         logger.info(f"Processing complete. Mode={mode}")
         return jsonify(response_data)
-        
+
     except Exception as e:
-        logger.error(f"Failed to process video upload: {e}")
-        return jsonify({"success": False, "error": f"Internal server error: {str(e)}"}), 500
+        import traceback
+        tb_str = traceback.format_exc()
+        logger.error(f"Failed to process video upload: {tb_str}")
+        return jsonify({"success": False, "error": f"Internal server error: {str(e)}", "traceback": tb_str}), 500
 
 @app.route("/api/events", methods=["GET"])
 def api_events():

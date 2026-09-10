@@ -1,5 +1,5 @@
 /*
-   UrbanPulse — Client-Side Application Logic
+   NagarNetra — Client-Side Application Logic
    Handles video drop/upload lifecycle, states, async API requests, and rendering.
 */
 
@@ -58,8 +58,12 @@ document.addEventListener("DOMContentLoaded", () => {
             navAnalyze.classList.remove("active");
             if (dashboardGrid) dashboardGrid.style.display = "none";
             if (mapView) mapView.style.display = "grid";
-            if (window.UrbanPulseMap && typeof window.UrbanPulseMap.load === "function") {
-                window.UrbanPulseMap.load();
+            try {
+                if (window.UrbanPulseMap && typeof window.UrbanPulseMap.load === "function") {
+                    window.UrbanPulseMap.load();
+                }
+            } catch (mapErr) {
+                console.warn("UrbanPulseMap nav load warning:", mapErr);
             }
         });
     }
@@ -352,7 +356,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                         if (downloadBtn) {
                             downloadBtn.href = imgUrl;
-                            downloadBtn.download = "urbanpulse_image_analysis.jpg";
+                            downloadBtn.download = "nagarnetra_image_analysis.jpg";
                             downloadBtn.innerHTML = `
                                 <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -366,7 +370,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         }
                         if (downloadBtn) {
                             downloadBtn.href = data.download_url;
-                            downloadBtn.download = "urbanpulse_processed.mp4";
+                            downloadBtn.download = "nagarnetra_processed.mp4";
                             downloadBtn.innerHTML = `
                                 <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -386,8 +390,12 @@ document.addEventListener("DOMContentLoaded", () => {
                         renderTelemetryDashboard(data);
                     }
 
-                    if (window.UrbanPulseMap && typeof window.UrbanPulseMap.load === "function") {
-                        window.UrbanPulseMap.load();
+                    try {
+                        if (window.UrbanPulseMap && typeof window.UrbanPulseMap.load === "function") {
+                            window.UrbanPulseMap.load();
+                        }
+                    } catch (mapErr) {
+                        console.warn("UrbanPulseMap load error ignored:", mapErr);
                     }
                 } else {
                     throw new Error(data.error || "Analysis failed");
@@ -395,10 +403,18 @@ document.addEventListener("DOMContentLoaded", () => {
             } catch (e) {
                 console.error("Media Analysis Pipeline Error:", e);
                 alert("Error during media processing: " + e.message);
-                resetUI();
+                isProcessing = false;
+                if (processBtn) {
+                    processBtn.disabled = false;
+                    updateProcessButtonText();
+                }
+                if (outputLoading) outputLoading.style.display = "none";
+                if (outputIdle) outputIdle.style.display = "flex";
+                if (removeFileBtn) removeFileBtn.style.display = "block";
             }
         });
     }
+
 
     // 9. Telemetry Rendering Helper
     function renderTelemetryDashboard(data) {
@@ -458,21 +474,24 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // --- Populate Traffic AI Dashboard ---
-        if (mode === "traffic" || mode === "combined") {
-            kpiVehicles.textContent = data.total_vehicles;
-            kpiPersons.textContent = data.total_persons;
+        if (mode === "traffic" || mode === "combined" || mode === "unified") {
+            if (kpiVehicles) kpiVehicles.textContent = (data.total_vehicles !== undefined && data.total_vehicles !== null) ? data.total_vehicles : 0;
+            if (kpiPersons) kpiPersons.textContent = (data.total_persons !== undefined && data.total_persons !== null) ? data.total_persons : 0;
             
             const densityVal = data.traffic_density || "LOW";
-            kpiDensity.textContent = densityVal;
+            if (kpiDensity) kpiDensity.textContent = densityVal;
 
-            densityCard.className = "kpi-card";
-            if (densityVal === "LOW") {
-                densityCard.classList.add("density-low");
-            } else if (densityVal === "MEDIUM") {
-                densityCard.classList.add("density-medium");
-            } else if (densityVal === "HIGH") {
-                densityCard.classList.add("density-high");
+            if (densityCard) {
+                densityCard.className = "kpi-card";
+                if (densityVal === "LOW") {
+                    densityCard.classList.add("density-low");
+                } else if (densityVal === "MEDIUM") {
+                    densityCard.classList.add("density-medium");
+                } else if (densityVal === "HIGH") {
+                    densityCard.classList.add("density-high");
+                }
             }
+
 
             // Update KPI Labels and Subtitles based on camera mode
             const cameraMode = data.camera_mode || "stationary";
@@ -681,10 +700,15 @@ document.addEventListener("DOMContentLoaded", () => {
         if (elInputRes) elInputRes.textContent = perf.resolution || data.input_resolution || "Auto (Adapted)";
         if (elProcRes) elProcRes.textContent = data.processing_resolution || "640x640 (YOLO)";
         if (elSourceFps) elSourceFps.textContent = data.source_fps ? `${data.source_fps} FPS` : "30.0 FPS";
-        if (elTotalFrames) elTotalFrames.textContent = perf.total_frames || data.total_frames || "-";
+        if (elTotalFrames) elTotalFrames.textContent = perf.total_frames !== undefined ? perf.total_frames : (data.total_frames !== undefined ? data.total_frames : "-");
         if (elDevice) elDevice.textContent = perf.device || data.device || "CPU";
-        if (elAvgFps) elAvgFps.textContent = perf.avg_fps ? `${perf.avg_fps} FPS` : (data.avg_fps ? `${data.avg_fps} FPS` : "-");
-        if (elElapsed) elElapsed.textContent = perf.elapsed_time ? `${perf.elapsed_time}s` : (data.elapsed_time ? `${data.elapsed_time}s` : "-");
+
+        const fpsVal = perf.avg_fps !== undefined ? perf.avg_fps : data.avg_fps;
+        if (elAvgFps) elAvgFps.textContent = (fpsVal !== undefined && fpsVal !== null) ? `${fpsVal} FPS` : "-";
+
+        const elapsedVal = perf.elapsed_time !== undefined ? perf.elapsed_time : data.elapsed_time;
+        if (elElapsed) elElapsed.textContent = (elapsedVal !== undefined && elapsedVal !== null) ? `${elapsedVal}s` : "-";
+
 
         // Smoothly scroll to telemetry dashboard
         statsDashboard.scrollIntoView({ behavior: "smooth" });
@@ -799,6 +823,57 @@ document.addEventListener("DOMContentLoaded", () => {
             const tr = document.createElement("tr");
             tr.innerHTML = `<td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No vehicles or number plates detected in this image.</td>`;
             photoTableBody.appendChild(tr);
+        }
+
+        // Pothole Detection Log Table
+        const photoPotholeCard = document.getElementById("photo-pothole-card");
+        const photoPotholeBody = document.querySelector("#photo-pothole-log-table tbody");
+        const potholes = data.potholes || [];
+        if (potholes.length > 0) {
+            if (photoPotholeCard) photoPotholeCard.style.display = "block";
+            if (photoPotholeBody) {
+                photoPotholeBody.innerHTML = "";
+                potholes.forEach(p => {
+                    const tr = document.createElement("tr");
+                    const conf = Math.round(p.confidence * 100);
+                    const snapUrl = p.snapshot_url || (data.image ? data.image.output_url : "#");
+                    const bboxStr = p.bbox ? `[${p.bbox.join(", ")}]` : "-";
+                    tr.innerHTML = `
+                        <td><strong>#${p.pothole_index}</strong></td>
+                        <td><span class="category-pill" style="background: rgba(239, 68, 68, 0.15); color: #ef4444;">POTHOLE</span></td>
+                        <td><strong>${conf}%</strong></td>
+                        <td style="font-family: monospace; font-size: 0.8rem;">${bboxStr}</td>
+                        <td>
+                            <button type="button" class="btn btn-secondary view-pothole-btn"
+                                data-url="${snapUrl}" data-conf="${conf}%" data-idx="${p.pothole_index}"
+                                style="padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+                                View Evidence
+                            </button>
+                        </td>
+                    `;
+                    photoPotholeBody.appendChild(tr);
+                });
+
+                photoPotholeBody.querySelectorAll(".view-pothole-btn").forEach(btn => {
+                    btn.addEventListener("click", (e) => {
+                        const url = e.currentTarget.getAttribute("data-url");
+                        const conf = e.currentTarget.getAttribute("data-conf");
+                        const idx = e.currentTarget.getAttribute("data-idx");
+                        incidentModalContent.innerHTML = `
+                            <div class="evidence-modal-body">
+                                <h3>Pothole Hazard Evidence (Pothole #${idx})</h3>
+                                <p style="margin-bottom: 1rem;">Confidence: <strong>${conf}</strong></p>
+                                <div>
+                                    <img src="${url}" style="max-width: 100%; border-radius: 6px; border: 1px solid var(--border-color);" alt="Pothole Evidence">
+                                </div>
+                            </div>
+                        `;
+                        incidentModal.style.display = "flex";
+                    });
+                });
+            }
+        } else {
+            if (photoPotholeCard) photoPotholeCard.style.display = "none";
         }
 
         // Performance Telemetry

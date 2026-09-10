@@ -5,6 +5,7 @@
     let firstLoadFinished = false;
 
     function initMap() {
+        if (typeof L === 'undefined') return;
         const mapContainer = document.getElementById('map');
         if (!mapContainer || map) return;
 
@@ -41,6 +42,7 @@
     }
 
     function loadEvents() {
+        if (typeof L === 'undefined') return;
         if (!map) {
             initMap();
         }
@@ -159,7 +161,8 @@
         }, 5000);
     });
 
-    window.UrbanPulseMap = {
+    window.NagarNetraMap = {
         load: loadEvents
     };
+    window.UrbanPulseMap = window.NagarNetraMap;
 })();

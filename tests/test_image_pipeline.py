@@ -44,6 +44,7 @@ class TestPhotoAnalysisPipeline(unittest.TestCase):
 
         self.assertTrue(result["success"])
         self.assertEqual(result["source_type"], "image")
+        self.assertEqual(result["camera_mode"], "stationary")
         self.assertEqual(result["timestamp"]["label"], "Analysis Time")
         self.assertFalse(result["location"]["available"])
         self.assertIsNone(result["location"]["latitude"])

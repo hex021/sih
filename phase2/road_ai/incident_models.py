@@ -59,7 +59,7 @@ class IncidentReport:
     """
     report_id: str
     event: RashDrivingEvent
-    issued_by: str = "UrbanPulse AI Traffic Enforcement System"
+    issued_by: str = "NagarNetra AI Traffic Enforcement System"
     penalty_points: int = 4
     fine_amount_inr: int = 2000
 

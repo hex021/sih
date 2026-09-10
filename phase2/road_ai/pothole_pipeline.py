@@ -85,7 +85,7 @@ def run_road_pipeline(
         ]
         try:
             import subprocess
-            subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            subprocess.run(ffmpeg_cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
             video_source_path = temp_resized_path
             scale = 1.0
             logger.info("FFmpeg pre-resizing completed successfully.")

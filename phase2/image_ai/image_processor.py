@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from phase1.detector import Detector
 from phase1.models import TrackedObject
 from phase2.anpr import PlateDetector, OCREngine, PlateDetection, OCRResult
+from phase2.road_ai import pothole_config
 from phase2.road_ai.pothole_detector import PotholeDetector
 from phase2.image_ai import image_config
 from phase2.image_ai.exif_parser import extract_image_exif_metadata
@@ -18,7 +19,7 @@ logger = logging.getLogger("SIH_Server")
 
 class ImageProcessor:
     """
-    Dedicated Still Image Processor for UrbanPulse AI Platform.
+    Dedicated Still Image Processor for NagarNetra AI Platform.
     Performs vehicle detection, plate localization, real OCR text extraction,
     pothole damage detection, spatial vehicle-plate association, and evidence snapshot generation on photographs.
     Strictly prohibits data fabrication.
@@ -28,7 +29,12 @@ class ImageProcessor:
         self.plate_detector = PlateDetector()
         self.ocr_engine = OCREngine(use_easyocr=False)
         try:
-            self.pothole_detector = PotholeDetector()
+            self.pothole_detector = PotholeDetector(
+                road_roi=(0.0, 0.0, 1.0, 1.0),
+                conf_threshold=0.35,
+                sat_max_mean=220.0,
+                green_max_fraction=0.35
+            )
         except Exception as e:
             logger.warning(f"PotholeDetector initialization deferred or failed: {e}")
             self.pothole_detector = None
@@ -41,8 +47,8 @@ class ImageProcessor:
         logger.info(f"Starting Still Photo Analysis on image: {input_image_path}")
         start_time = time.time()
 
-        if not os.path.exists(input_image_path):
-            return {"success": False, "error": f"Image file not found: {input_image_path}"}
+        if not input_image_path or not isinstance(input_image_path, str) or not os.path.exists(input_image_path):
+            return {"success": False, "error": f"Image file not found or invalid path: {input_image_path}"}
 
         # 1. Read Image
         frame = cv2.imread(input_image_path)
@@ -103,7 +109,13 @@ class ImageProcessor:
         pothole_detections_list = []
         if self.pothole_detector:
             try:
-                p_dets, _ = self.pothole_detector.detect(frame, frame_number=1, timestamp=0.0)
+                p_dets, _ = self.pothole_detector.detect(
+                    frame,
+                    frame_number=1,
+                    timestamp=0.0,
+                    road_roi=(0.0, 0.0, 1.0, 1.0),
+                    is_still_image=True
+                )
                 pothole_detections_list = p_dets
             except Exception as e:
                 logger.warning(f"Error during image pothole detection: {e}")
@@ -128,24 +140,26 @@ class ImageProcessor:
 
             if plate_info is not None:
                 plate_det, plate_crop = plate_info
-                ocr_res = self.ocr_engine.extract_text(plate_crop)
+                ocr_res = self.ocr_engine.extract_text(plate_crop, frame_number=1, track_id=veh.track_id)
                 plates_detected_count += 1
 
-                reg_text = ocr_res.normalized_text if ocr_res.normalized_text != "UNREADABLE" else "UNREADABLE"
-                raw_ocr_text = ocr_res.raw_ocr if ocr_res.raw_ocr != "UNREADABLE" else "UNREADABLE"
+                reg_text = ocr_res.plate if ocr_res.plate is not None else "UNREADABLE"
+                raw_ocr_text = ocr_res.raw_ocr if ocr_res.raw_ocr else "UNREADABLE"
+                plate_status = ocr_res.plate_status
 
-                if reg_text != "UNREADABLE":
+                if ocr_res.plate_status == "validated":
                     plates_read_count += 1
                 else:
                     unreadable_count += 1
 
                 plate_conf = plate_det.confidence
-                ocr_conf = ocr_res.ocr_confidence
+                ocr_conf = ocr_res.plate_confidence if ocr_res.plate_confidence > 0 else ocr_res.ocr_confidence
             else:
                 plate_det = None
                 plate_crop = None
                 reg_text = "UNREADABLE"
                 raw_ocr_text = "UNREADABLE"
+                plate_status = "no_text"
                 plate_conf = 0.0
                 ocr_conf = 0.0
                 unreadable_count += 1
@@ -160,7 +174,7 @@ class ImageProcessor:
                 annotated_frame, veh, plate_det, reg_text, ocr_conf
             )
 
-            # Record entry matching schema
+            # Record entry matching schema with C4 fields inside attrs
             vehicle_records.append({
                 "vehicle_index": veh.track_id,
                 "vehicle_type": veh.class_name,
@@ -170,9 +184,17 @@ class ImageProcessor:
                     "text": reg_text,
                     "raw_ocr": raw_ocr_text,
                     "detection_confidence": round(plate_conf, 2),
-                    "ocr_confidence": round(ocr_conf, 2) if ocr_conf > 0 else None
+                    "ocr_confidence": round(ocr_conf, 2) if ocr_conf > 0 else None,
+                    "plate_status": plate_status
+                },
+                "attrs": {
+                    "plate": reg_text if reg_text != "UNREADABLE" else None,
+                    "plate_confidence": round(ocr_conf, 2),
+                    "plate_status": plate_status,
+                    "ocr_raw": raw_ocr_text if raw_ocr_text != "UNREADABLE" else ""
                 },
                 "evidence": {
+
                     "vehicle_crop": veh_crop_url,
                     "plate_crop": plate_crop_url
                 }
@@ -189,10 +211,25 @@ class ImageProcessor:
             cv2.rectangle(annotated_frame, (px1, ty1), (px1 + tw + 8, ty1 + th + 6), (0, 0, 255), -1)
             cv2.putText(annotated_frame, p_label, (px1 + 4, ty1 + th + 2), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
 
+            # Crop and save evidence snapshot
+            pad_w = int((px2 - px1) * 0.15)
+            pad_h = int((py2 - py1) * 0.15)
+            c_x1, c_y1 = max(0, px1 - pad_w), max(0, py1 - pad_h)
+            c_x2, c_y2 = min(w_img, px2 + pad_w), min(h_img, py2 + pad_h)
+            p_crop = frame[c_y1:c_y2, c_x1:c_x2]
+
+            os.makedirs(pothole_config.EVENTS_FOLDER, exist_ok=True)
+            p_snap_filename = f"event_img_pothole_{p_idx}_{int(time.time())}.jpg"
+            p_snap_path = os.path.join(pothole_config.EVENTS_FOLDER, p_snap_filename)
+            if p_crop is not None and p_crop.size > 0:
+                cv2.imwrite(p_snap_path, p_crop)
+            p_snap_url = f"/processed/events/pothole/{p_snap_filename}"
+
             pothole_records.append({
                 "pothole_index": p_idx,
                 "confidence": round(p_det.confidence, 2),
-                "bbox": [round(v, 1) for v in p_det.bbox]
+                "bbox": [round(v, 1) for v in p_det.bbox],
+                "snapshot_url": p_snap_url
             })
 
         # 6. Write Annotated Image Output
@@ -206,6 +243,7 @@ class ImageProcessor:
         return {
             "success": True,
             "source_type": "image",
+            "camera_mode": "stationary",
             "image": {
                 "filename": os.path.basename(input_image_path),
                 "width": w_img,

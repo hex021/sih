@@ -49,16 +49,16 @@ class TestPhase22OCREngineAndIndianPlateNormalization(unittest.TestCase):
     def setUp(self):
         self.ocr = OCREngine(use_easyocr=False)
 
-    def test_indian_plate_normalization(self):
-        """Test normalization and correction of Indian vehicle registration plates."""
+    def test_indian_plate_normalization_standard(self):
+        """Test normalization and correction of Standard Indian registration plates (C1 & C2)."""
         # Case 1: Raw string with spaces -> Normalized
         normalized, valid = self.ocr.normalize_indian_plate(" GJ 01 AB 1234 ")
         self.assertEqual(normalized, "GJ01AB1234")
         self.assertTrue(valid)
 
         # Case 2: State prefix digit-to-letter correction ('0' -> 'O')
-        normalized2, valid2 = self.ocr.normalize_indian_plate("MH 12 CD 5678")
-        self.assertEqual(normalized2, "MH12CD5678")
+        normalized2, valid2 = self.ocr.normalize_indian_plate("0J 01 AB 1234")
+        self.assertEqual(normalized2, "OJ01AB1234")
         self.assertTrue(valid2)
 
         # Case 3: Letter-to-digit correction in district code ('O' -> '0')
@@ -66,16 +66,74 @@ class TestPhase22OCREngineAndIndianPlateNormalization(unittest.TestCase):
         self.assertEqual(normalized3, "GJ01AB1234")
         self.assertTrue(valid3)
 
-        # Case 4: Invalid short text
-        _, valid4 = self.ocr.normalize_indian_plate("AB")
-        self.assertFalse(valid4)
+        # Case 4: Standard format with single digit district and 1 series letter: MH12A5678
+        normalized4, valid4 = self.ocr.normalize_indian_plate("MH 12 A 5678")
+        self.assertEqual(normalized4, "MH12A5678")
+        self.assertTrue(valid4)
 
-    def test_extract_text_fallback(self):
-        """Test text extraction pipeline fallback on synthetic plate crop."""
+        # Case 5: Position-aware: in digit position, map O->0, I->1, S->5, B->8, Z->2, G->6
+        normalized5, valid5 = self.ocr.normalize_indian_plate("DL 01 AB I2S8")
+        self.assertEqual(normalized5, "DL01AB1258")
+        self.assertTrue(valid5)
+
+        # Case 6: In letter position (state / series), map 0->O, 1->I, 5->S, 8->B, 2->Z, 6->G
+        normalized6, valid6 = self.ocr.normalize_indian_plate("GJ 01 5B 1234")
+        self.assertEqual(normalized6, "GJ01SB1234")
+        self.assertTrue(valid6)
+
+    def test_indian_plate_normalization_bharat_series(self):
+        """Test Bharat (BH) series plate validation and position-aware correction (C2)."""
+        # Case 1: Direct Bharat format
+        normalized, valid = self.ocr.normalize_indian_plate("22 BH 1234 AA")
+        self.assertEqual(normalized, "22BH1234AA")
+        self.assertTrue(valid)
+
+        # Case 2: Letter to digit in year code ('ZZ' -> '22') and '8' -> 'B' in BH
+        normalized2, valid2 = self.ocr.normalize_indian_plate("ZZ 8H 1234 AA")
+        self.assertEqual(normalized2, "22BH1234AA")
+        self.assertTrue(valid2)
+
+        # Case 3: Single letter series Bharat plate
+        normalized3, valid3 = self.ocr.normalize_indian_plate("23 BH 5678 A")
+        self.assertEqual(normalized3, "23BH5678A")
+        self.assertTrue(valid3)
+
+    def test_c3_reject_rather_than_guess(self):
+        """Test that invalid format or low confidence strings are rejected, not fabricated (C3)."""
+        # Invalid format string
+        _, valid = self.ocr.normalize_indian_plate("INVALIDTEXT123")
+        self.assertFalse(valid)
+
+        # Crop that produces no text or is rejected
         crop = np.zeros((48, 160, 3), dtype=np.uint8)
         res = self.ocr.extract_text(crop)
         self.assertIsInstance(res, OCRResult)
-        self.assertIn(res.normalized_text, ["UNREADABLE", "GJ01AB1234", "MH12CD5678"])
+        self.assertIsNone(res.plate)
+        self.assertIn(res.plate_status, ["no_text", "format_rejected", "low_confidence"])
+
+    def test_c5_aspect_ratio_pre_filter(self):
+        """Test aspect ratio pre-filtering: 2:1 to 5:1 (width:height) (C5)."""
+        # 1. Aspect ratio 3.0 (valid: 150w x 50h)
+        crop_valid = np.zeros((50, 150, 3), dtype=np.uint8)
+        self.assertTrue(self.ocr.check_aspect_ratio(crop_valid, min_aspect_ratio=2.0, max_aspect_ratio=5.0))
+
+        # 2. Aspect ratio 1.0 (square, invalid: 50w x 50h)
+        crop_square = np.zeros((50, 50, 3), dtype=np.uint8)
+        self.assertFalse(self.ocr.check_aspect_ratio(crop_square, min_aspect_ratio=2.0, max_aspect_ratio=5.0))
+
+        # 3. Aspect ratio 6.0 (too wide, invalid: 180w x 30h)
+        crop_too_wide = np.zeros((30, 180, 3), dtype=np.uint8)
+        self.assertFalse(self.ocr.check_aspect_ratio(crop_too_wide, min_aspect_ratio=2.0, max_aspect_ratio=5.0))
+
+    def test_phase_b_preprocessing_4x_and_clahe(self):
+        """Test Phase B 4x upscaling and CLAHE greyscale preprocessing."""
+        crop = np.zeros((20, 60, 3), dtype=np.uint8)
+        preproc = self.ocr.preprocess_plate_crop(crop)
+        # Dimensions must be exactly 4x: (20*4, 60*4) = (80, 240)
+        self.assertEqual(preproc.shape[:2], (80, 240))
+        # Must be single channel greyscale
+        self.assertEqual(len(preproc.shape), 2)
+
 
 class TestPhase22MultiFrameAggregatorAndDeduplication(unittest.TestCase):
     def setUp(self):
@@ -84,16 +142,18 @@ class TestPhase22MultiFrameAggregatorAndDeduplication(unittest.TestCase):
         self.aggregator = ANPRAggregator(output_events_dir=self.temp_dir)
 
     def test_multi_frame_aggregation_and_single_record(self):
-        """Test that multiple frames for track #27 produce exactly ONE primary VehicleRecord."""
+        """Test that multiple frames for track #27 produce exactly ONE primary VehicleRecord with C4 fields."""
         # Track 27 metadata
         veh = TrackedObject(27, "CAR", 0.92, (100, 100, 300, 300), 200, 200, 200, 200)
         self.aggregator.update_track_metadata([veh], frame_number=100, timestamp=3.3)
-        
+
         det1 = PlateDetection((120, 120, 180, 150), 0.85, 100, 3.3, 27)
-        ocr1 = OCRResult("GJ 01 AB 1234", "GJ01AB1234", 0.75, True)
-        
+        ocr1 = OCRResult(raw_ocr="GJ 01 AB 1234", normalized_text="GJ01AB1234", plate="GJ01AB1234",
+                         ocr_confidence=0.75, plate_confidence=0.75, plate_status="validated", is_valid_pattern=True)
+
         det2 = PlateDetection((120, 120, 180, 150), 0.90, 105, 3.5, 27)
-        ocr2 = OCRResult("GJ 01 AB 1234", "GJ01AB1234", 0.91, True)
+        ocr2 = OCRResult(raw_ocr="GJ 01 AB 1234", normalized_text="GJ01AB1234", plate="GJ01AB1234",
+                         ocr_confidence=0.91, plate_confidence=0.91, plate_status="validated", is_valid_pattern=True)
 
         dummy_img = np.zeros((50, 50, 3), dtype=np.uint8)
 
@@ -102,35 +162,48 @@ class TestPhase22MultiFrameAggregatorAndDeduplication(unittest.TestCase):
         self.aggregator.add_observation(27, det2, ocr2, dummy_img, dummy_img, 0.92)
 
         records = self.aggregator.finalize_vehicle_records()
-        
+
         # Verify EXACTLY 1 record for track #27
         self.assertEqual(len(records), 1)
         record = records[0]
         self.assertEqual(record.track_id, 27)
-        self.assertEqual(record.registration_number, "GJ01AB1234")
+        self.assertEqual(record.plate, "GJ01AB1234")
+        self.assertEqual(record.plate_status, "validated")
         self.assertEqual(record.ocr_confidence, 0.91)
         self.assertIsNone(record.location["latitude"])
         self.assertIsNone(record.location["longitude"])
 
-    def test_unreadable_plate_handling(self):
-        """Test graceful handling of track with no readable plate."""
+    def test_c3_unreadable_and_rejected_plate_handling(self):
+        """Test C3 & C4: unreadable or format rejected track produces plate: null, plate_status in attrs."""
         veh = TrackedObject(32, "TRUCK", 0.88, (100, 100, 400, 400), 250, 250, 250, 250)
         self.aggregator.update_track_metadata([veh], frame_number=50, timestamp=1.6)
 
         records = self.aggregator.finalize_vehicle_records()
         self.assertEqual(len(records), 1)
-        self.assertEqual(records[0].registration_number, "UNREADABLE")
-        self.assertEqual(records[0].ocr_confidence, 0.0)
+        record = records[0]
+        self.assertIsNone(record.plate)
+        self.assertIn(record.plate_status, ["no_text", "format_rejected", "low_confidence", "unreadable"])
+        d = record.to_dict()
+        self.assertIsNone(d["plate"])
+        self.assertIn("plate", d["attrs"])
+        self.assertIsNone(d["attrs"]["plate"])
+        self.assertIn("plate_status", d["attrs"])
+        self.assertIn("plate_confidence", d["attrs"])
+        self.assertIn("ocr_raw", d["attrs"])
 
-    def test_vehicle_record_schema_serialization(self):
-        """Verify VehicleRecord.to_dict() matches the Phase 2.2 JSON schema."""
+    def test_c4_vehicle_record_schema_serialization(self):
+        """Verify VehicleRecord.to_dict() contains C4 fields inside attrs and root."""
         record = VehicleRecord(
             track_id=27,
             vehicle_type="CAR",
             vehicle_confidence=0.91,
+            plate="GJ01AB1234",
             registration_number="GJ01AB1234",
+            ocr_raw="GJ 01 AB 1234",
             raw_ocr="GJ 01 AB 1234",
+            plate_confidence=0.91,
             ocr_confidence=0.91,
+            plate_status="validated",
             plate_detection_confidence=0.88,
             timestamp=12.45,
             frame_number=374
@@ -140,10 +213,17 @@ class TestPhase22MultiFrameAggregatorAndDeduplication(unittest.TestCase):
         self.assertEqual(d["event_type"], "VEHICLE_IDENTIFICATION")
         self.assertEqual(d["vehicle"]["track_id"], 27)
         self.assertEqual(d["vehicle"]["type"], "CAR")
-        self.assertEqual(d["number_plate"]["text"], "GJ01AB1234")
-        self.assertEqual(d["number_plate"]["raw_ocr"], "GJ 01 AB 1234")
-        self.assertIsNone(d["location"]["latitude"])
-        self.assertIsNone(d["location"]["longitude"])
+        self.assertEqual(d["plate"], "GJ01AB1234")
+        self.assertEqual(d["plate_status"], "validated")
+        self.assertEqual(d["plate_confidence"], 0.91)
+        self.assertEqual(d["ocr_raw"], "GJ 01 AB 1234")
+
+        # C4 — Explicitly in attrs
+        self.assertEqual(d["attrs"]["plate"], "GJ01AB1234")
+        self.assertEqual(d["attrs"]["plate_status"], "validated")
+        self.assertEqual(d["attrs"]["plate_confidence"], 0.91)
+        self.assertEqual(d["attrs"]["ocr_raw"], "GJ 01 AB 1234")
+
 
 class TestPhase22APIEndpoints(unittest.TestCase):
     def setUp(self):
@@ -157,3 +237,4 @@ class TestPhase22APIEndpoints(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

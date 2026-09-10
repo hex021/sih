@@ -48,8 +48,15 @@ def run_combined_pipeline(
         roi_relative_coords = phase1_config.ROI_RELATIVE
 
     # Load Models
+    from phase2.telemetry import GPSTrack
+    gps = GPSTrack()
+    if gps.available:
+        logger.info(f"GPS track loaded: {gps.total_frames()} frames (simulated)")
+    else:
+        logger.warning("No GPS track found — events will have location=None")
+
     tracker = Tracker()
-    pothole_detector = PotholeDetector(model_path=POTHOLE_MODEL_PATH)
+    pothole_detector = PotholeDetector(model_path=POTHOLE_MODEL_PATH, gps_track=gps)
     logger.info("Both YOLO models successfully loaded.")
     
     counter = Counter()
@@ -96,7 +103,7 @@ def run_combined_pipeline(
         ]
         try:
             import subprocess
-            subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            subprocess.run(ffmpeg_cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
             video_source_path = temp_resized_path
             scale = 1.0
             logger.info("FFmpeg pre-resizing completed successfully.")
@@ -207,8 +214,11 @@ def run_combined_pipeline(
                         cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
             cv2.putText(annotated_frame, f"Potholes Detected: {len(all_pothole_events)}", (px1 + 15, py1 + 47),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 120, 255), 1, cv2.LINE_AA)
-            cv2.putText(annotated_frame, f"Simulated GPS: NULL (Waiting)", (px1 + 15, py1 + 68),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (150, 150, 150), 1, cv2.LINE_AA)
+            loc = gps.get_location(frame_idx)
+            gps_text = (f"GPS: {loc['latitude']:.5f}, {loc['longitude']:.5f}"
+                        if loc else "GPS: N/A")
+            cv2.putText(annotated_frame, gps_text, (px1 + 15, py1 + 68),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 255, 180), 1, cv2.LINE_AA)
                         
             out.write(annotated_frame)
             

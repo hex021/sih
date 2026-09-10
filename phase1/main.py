@@ -170,7 +170,7 @@ def run_pipeline(
         ]
         try:
             import subprocess
-            subprocess.run(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+            subprocess.run(ffmpeg_cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
             video_source_path = temp_resized_path
             # Since video is pre-resized, scaling factor inside frame loop is 1.0
             scale = 1.0
