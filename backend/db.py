@@ -72,6 +72,11 @@ def insert_event(event_dict: dict, bus_id: str, session_id: str) -> str:
         speed_kmph = location.get("speed_kmph")
         heading_deg = location.get("heading_deg")
 
+    # Exempt moving vehicle incidents from spatial coordinate deduplication
+    if event_type == "INCIDENT":
+        lat_key = None
+        lon_key = None
+
     media = event_dict.get("media", {})
     snapshot_url = media.get("snapshot") if isinstance(media, dict) else None
 
@@ -80,6 +85,8 @@ def insert_event(event_dict: dict, bus_id: str, session_id: str) -> str:
         "media": event_dict.get("media"),
         "metadata": event_dict.get("metadata")
     }
+    if "attrs" in event_dict and isinstance(event_dict["attrs"], dict):
+        attrs.update(event_dict["attrs"])
     attrs_json = json.dumps(attrs)
 
     with _get_conn() as conn:

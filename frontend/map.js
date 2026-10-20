@@ -33,6 +33,7 @@
 
     function getColor(type) {
         switch ((type || '').toUpperCase()) {
+            case 'INCIDENT': return '#DC2626';
             case 'VEHICLE': return '#3B82F6';
             case 'CONGESTION': return '#EF4444';
             case 'POTHOLE':
@@ -77,25 +78,58 @@
                     latLons.push([lat, lon]);
                     heatPoints.push([lat, lon, sightingCount]);
 
-                    let popupHtml = `<div style="font-family: sans-serif; color: #1e293b; min-width: 180px;">
-                        <div style="font-weight: bold; font-size: 1.05rem; margin-bottom: 4px;">${ev.event_type || 'POTHOLE'}</div>
-                        <div style="font-size: 0.85rem; color: #475569;">Confidence: <b>${confidence}%</b></div>`;
-
-                    if (ev.snapshot_url) {
-                        popupHtml += `<div style="margin: 6px 0;">
-                            <img src="${ev.snapshot_url}" alt="Event Snapshot" style="width: 220px; max-width: 100%; border-radius: 6px; display: block;" />
-                        </div>`;
+                    let attrs = ev.attrs_json || {};
+                    if (typeof attrs === 'string') {
+                        try { attrs = JSON.parse(attrs); } catch (e) { attrs = {}; }
                     }
 
-                    popupHtml += `<div style="font-size: 0.85rem; margin-top: 4px;">Sightings: <b>${sightingCount}</b></div>`;
-                    if (sightingCount > 1) {
-                        popupHtml += `<div style="font-size: 0.85rem; color: #ea580c; font-weight: bold;">Confirmed by ${sightingCount} fleet passes</div>`;
-                    }
+                    let popupHtml = '';
+                    if ((ev.event_type || '').toUpperCase() === 'INCIDENT') {
+                        const reasonText = (attrs.reason || 'Safety Anomaly').replace('_', ' ').toUpperCase();
+                        const trackId = attrs.track_id !== undefined ? `#${attrs.track_id}` : 'N/A';
+                        const plateText = attrs.plate || 'UNREADABLE';
+                        const measuredVal = attrs.measured_value !== undefined ? attrs.measured_value : '';
 
-                    popupHtml += `<div style="font-size: 0.8rem; color: #64748b; margin-top: 6px;">
-                        Location: ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>
-                        <i>GPS: simulated</i>
-                    </div></div>`;
+                        popupHtml = `<div style="font-family: sans-serif; color: #1e293b; min-width: 220px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span style="font-weight: bold; font-size: 1.05rem; color: #DC2626;">INCIDENT</span>
+                                <span style="background: #FEE2E2; color: #991B1B; font-size: 0.72rem; font-weight: 700; padding: 2px 6px; border-radius: 4px;">${reasonText}</span>
+                            </div>
+                            <div style="font-size: 0.85rem; color: #475569; margin-bottom: 2px;">Track ID: <b>${trackId}</b></div>
+                            <div style="font-size: 0.85rem; color: #475569; margin-bottom: 4px;">Number Plate: <b style="background: #FEF3C7; color: #92400E; padding: 1px 6px; border-radius: 3px; font-family: monospace;">${plateText}</b></div>
+                            ${measuredVal ? `<div style="font-size: 0.8rem; color: #64748b; margin-bottom: 4px;">Anomaly Rate: <b>${measuredVal}</b></div>` : ''}`;
+
+                        if (ev.snapshot_url) {
+                            popupHtml += `<div style="margin: 6px 0;">
+                                <img src="${ev.snapshot_url}" alt="Incident Vehicle Evidence" style="width: 220px; max-width: 100%; border-radius: 6px; display: block;" />
+                            </div>`;
+                        }
+
+                        popupHtml += `<div style="font-size: 0.8rem; color: #64748b; margin-top: 6px;">
+                            Location: ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>
+                            <i>GPS: simulated</i>
+                        </div></div>`;
+                    } else {
+                        popupHtml = `<div style="font-family: sans-serif; color: #1e293b; min-width: 180px;">
+                            <div style="font-weight: bold; font-size: 1.05rem; margin-bottom: 4px;">${ev.event_type || 'POTHOLE'}</div>
+                            <div style="font-size: 0.85rem; color: #475569;">Confidence: <b>${confidence}%</b></div>`;
+
+                        if (ev.snapshot_url) {
+                            popupHtml += `<div style="margin: 6px 0;">
+                                <img src="${ev.snapshot_url}" alt="Event Snapshot" style="width: 220px; max-width: 100%; border-radius: 6px; display: block;" />
+                            </div>`;
+                        }
+
+                        popupHtml += `<div style="font-size: 0.85rem; margin-top: 4px;">Sightings: <b>${sightingCount}</b></div>`;
+                        if (sightingCount > 1) {
+                            popupHtml += `<div style="font-size: 0.85rem; color: #ea580c; font-weight: bold;">Confirmed by ${sightingCount} fleet passes</div>`;
+                        }
+
+                        popupHtml += `<div style="font-size: 0.8rem; color: #64748b; margin-top: 6px;">
+                            Location: ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>
+                            <i>GPS: simulated</i>
+                        </div></div>`;
+                    }
 
                     const marker = L.circleMarker([lat, lon], {
                         radius: radius,

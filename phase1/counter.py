@@ -1,6 +1,19 @@
+import logging
 from typing import Dict, List, Set, Tuple
 from phase1 import config
 from phase1.models import TrackedObject
+
+logger = logging.getLogger("SIH_Counter")
+
+def _safe_log_count(msg: str):
+    try:
+        print(msg)
+    except OSError:
+        pass
+    try:
+        logger.info(msg)
+    except Exception:
+        pass
 
 class Counter:
     """
@@ -40,7 +53,7 @@ class Counter:
                     self.counted_incoming.add(track_id)
                     if cls_name in self.counts["incoming"]:
                         self.counts["incoming"][cls_name] += 1
-                        print(f"[COUNT] track_id={track_id} class={cls_name.lower()} previous_y={prev_y:.2f} current_y={curr_y:.2f} line_y={line_y:.2f} direction=INCOMING counted=true", flush=True)
+                        _safe_log_count(f"[COUNT] track_id={track_id} class={cls_name.lower()} previous_y={prev_y:.2f} current_y={curr_y:.2f} line_y={line_y:.2f} direction=INCOMING counted=true")
                         
             # Check for upward crossing (OUTGOING)
             # prev_y is strictly below the line, curr_y is on or above the line
@@ -49,7 +62,7 @@ class Counter:
                     self.counted_outgoing.add(track_id)
                     if cls_name in self.counts["outgoing"]:
                         self.counts["outgoing"][cls_name] += 1
-                        print(f"[COUNT] track_id={track_id} class={cls_name.lower()} previous_y={prev_y:.2f} current_y={curr_y:.2f} line_y={line_y:.2f} direction=OUTGOING counted=true", flush=True)
+                        _safe_log_count(f"[COUNT] track_id={track_id} class={cls_name.lower()} previous_y={prev_y:.2f} current_y={curr_y:.2f} line_y={line_y:.2f} direction=OUTGOING counted=true")
 
     def get_totals(self, direction: str = None) -> Tuple[int, int]:
         """

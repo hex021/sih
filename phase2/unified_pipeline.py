@@ -152,7 +152,15 @@ def run_unified_pipeline(
     ocr_engine = OCREngine(use_easyocr=True)
     aggregator = ANPRAggregator()
 
-    logger.info("All AI modules (YOLO Vehicle Tracker, Pothole Detector, Plate Detector, OCR Engine) initialized.")
+    from phase2.road_ai import rule_registry, RashDrivingRule
+    for rule in rule_registry.get_rules():
+        if isinstance(rule, RashDrivingRule):
+            if rule.plate_detector is None:
+                rule.plate_detector = plate_detector
+            if rule.ocr_engine is None:
+                rule.ocr_engine = ocr_engine
+
+    logger.info("All AI modules (YOLO Vehicle Tracker, Pothole Detector, Plate Detector, OCR Engine, Event Rules) initialized.")
 
     # 5. Output Video Writer Setup
     output_dir = os.path.dirname(output_path)
@@ -169,6 +177,7 @@ def run_unified_pipeline(
     # Trackers for unique objects across frames
     seen_objects = {cls: set() for cls in phase1_config.TARGET_CLASSES}
     all_pothole_events: List[PotholeEvent] = []
+    all_incident_events: List[Dict[str, Any]] = []
     current_frame_plates: Dict[int, Dict[str, Any]] = {}
 
     # State caches for frame decimation interpolation
@@ -228,6 +237,18 @@ def run_unified_pipeline(
                 # --- B. Phase 2.1 Road AI (Potholes) ---
                 pothole_dets, new_potholes = pothole_detector.detect(frame_to_process, frame_idx, current_time_sec)
                 all_pothole_events.extend(new_potholes)
+
+                # --- B.2 Event Rules (Rash Driving, Safety Anomalies) ---
+                for rule in rule_registry.get_rules():
+                    rule_incidents = rule.evaluate(
+                        tracked_objects=tracked_objects,
+                        frame=frame_to_process,
+                        frame_idx=frame_idx,
+                        timestamp=current_time_sec,
+                        gps=gps
+                    )
+                    if rule_incidents:
+                        all_incident_events.extend(rule_incidents)
 
                 # --- C. Phase 2.2 ANPR & License Plate Recognition ---
                 aggregator.update_track_metadata(tracked_objects, frame_idx, current_time_sec)
@@ -393,11 +414,18 @@ def run_unified_pipeline(
     no_text = sum(1 for r in vehicle_records if r.plate_status == "no_text")
     unreadable_plates = len(vehicle_records) - plates_validated
 
+    # Log summary of evaluated event rules
+    for rule in rule_registry.get_rules():
+        if isinstance(rule, RashDrivingRule):
+            logger.info(f"[RashDrivingRule Summary] Tracks evaluated: {rule.total_evaluated}, Incidents fired: {rule.total_fired} ({rule.counts_by_reason})")
+
     logger.info(
         f"Unified AI Pipeline Complete. Processed {frame_idx} frames in {elapsed_time:.2f}s "
         f"({avg_fps:.2f} FPS). Camera mode: {resolved_camera_mode.upper()} | Vehicles: {total_vehicles_unique} "
-        f"| ANPR Records: {len(vehicle_records)} (Validated: {plates_validated}, Format Rejected: {format_rejected}, Low Conf: {low_confidence}, No Text: {no_text}) | Potholes: {len(all_pothole_events)}"
+        f"| ANPR Records: {len(vehicle_records)} (Validated: {plates_validated}, Format Rejected: {format_rejected}, Low Conf: {low_confidence}, No Text: {no_text}) | Potholes: {len(all_pothole_events)} | Incidents: {len(all_incident_events)}"
     )
+
+    combined_events = [event.to_dict() for event in all_pothole_events] + all_incident_events
 
     return {
         "success": True,
@@ -420,8 +448,9 @@ def run_unified_pipeline(
         "total_persons": total_persons_unique,
         "traffic_density": density_class,
         "vehicle_records": records_dict,
-        "events": [event.to_dict() for event in all_pothole_events],
+        "events": combined_events,
         "total_potholes": len(all_pothole_events),
+        "total_incidents": len(all_incident_events),
         "summary": {
             "total_vehicles": len(vehicle_records),
             "plates_read": plates_validated,
@@ -430,7 +459,8 @@ def run_unified_pipeline(
             "low_confidence": low_confidence,
             "no_text": no_text,
             "unreadable_plates": unreadable_plates,
-            "potholes": len(all_pothole_events)
+            "potholes": len(all_pothole_events),
+            "incidents": len(all_incident_events)
         },
 
         "elapsed_time": round(elapsed_time, 2),

@@ -770,6 +770,20 @@ body {
     color: #9B2C2C;
 }
 
+.sample-badge, .badge-sample {
+    background-color: #F59E0B !important;
+    color: #FFFFFF !important;
+    padding: 0.25rem 0.65rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    display: inline-block;
+    vertical-align: middle;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
 /* Modal Styling */
 .modal-backdrop {
     position: fixed;

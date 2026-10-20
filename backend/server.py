@@ -116,6 +116,12 @@ def serve_number_plate_evidence_snapshot(filename):
     """Serves number plate and vehicle crop evidence snapshot images for still photos."""
     return send_from_directory(PLATE_EVIDENCE_FOLDER, filename)
 
+@app.route("/data/crops/incidents/<filename>")
+def serve_incident_crop(filename):
+    """Serves rash driving and incident vehicle crop evidence images."""
+    incidents_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "crops", "incidents"))
+    return send_from_directory(incidents_dir, filename)
+
 
 
 @app.route("/api/download/<filename>")
@@ -154,12 +160,17 @@ def get_status():
 @app.route("/api/incidents/<report_id>", methods=["GET"])
 def get_incident_report(report_id):
     """Retrieves generated incident report by ID."""
-    report = get_incident_report_by_id(report_id)
+    if report_id in ["sample", "REP-SAMPLE-TRACK27", "sample-report"]:
+        report = get_sample_track27_incident_report()
+    else:
+        report = get_incident_report_by_id(report_id)
     if not report:
         return jsonify({"success": False, "error": f"Report '{report_id}' not found"}), 404
+    rep_dict = report.to_dict()
     return jsonify({
         "success": True,
-        "report": report.to_dict(),
+        "report": rep_dict,
+        "is_sample": rep_dict.get("is_sample", False),
         "html_summary": report.generate_html_summary()
     })
 

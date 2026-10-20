@@ -62,6 +62,7 @@ class IncidentReport:
     issued_by: str = "NagarNetra AI Traffic Enforcement System"
     penalty_points: int = 4
     fine_amount_inr: int = 2000
+    is_sample: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -69,6 +70,7 @@ class IncidentReport:
             "issued_by": self.issued_by,
             "penalty_points": self.penalty_points,
             "fine_amount_inr": self.fine_amount_inr,
+            "is_sample": self.is_sample,
             "event": self.event.to_dict()
         }
 
@@ -77,10 +79,11 @@ class IncidentReport:
         ev = self.event
         vm = ev.vehicle_metadata
         loc = ev.location
+        sample_badge = '<span class="badge sample-badge" style="background:#f59e0b; color:#ffffff; padding:3px 8px; border-radius:4px; font-size:0.75rem; font-weight:bold; margin-left:8px; display:inline-block; vertical-align:middle;">SAMPLE REPORT</span>' if self.is_sample else ''
         return f"""
         <div class="incident-report-document">
             <div class="report-header">
-                <h2>SAFETY INCIDENT VIOLATION REPORT</h2>
+                <h2>SAFETY INCIDENT VIOLATION REPORT {sample_badge}</h2>
                 <span class="report-badge badge-critical">{ev.event_type}</span>
             </div>
             <div class="report-meta-grid">

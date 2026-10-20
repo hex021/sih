@@ -919,5 +919,23 @@ document.addEventListener("DOMContentLoaded", () => {
             if (incidentModal) incidentModal.style.display = "none";
         });
     }
+
+    // Official Incident Report Viewer with Sample Badge Support
+    window.showIncidentReport = function (reportId) {
+        const id = reportId || "sample";
+        fetch(`/api/incidents/${id}`)
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && incidentModal && incidentModalContent) {
+                    let html = data.html_summary || "";
+                    if ((data.is_sample || (data.report && data.report.is_sample)) && !html.includes("SAMPLE REPORT")) {
+                        html = `<div style="margin-bottom: 0.75rem;"><span class="sample-badge">SAMPLE REPORT</span></div>` + html;
+                    }
+                    incidentModalContent.innerHTML = html;
+                    incidentModal.style.display = "flex";
+                }
+            })
+            .catch(err => console.error("Failed to load incident report:", err));
+    };
 });
 

@@ -63,11 +63,41 @@ def generate_incident_report(event: RashDrivingEvent) -> IncidentReport:
     INCIDENT_REPORTS_STORE[report_id] = report
     return report
 
-def get_sample_track27_incident_report() -> Optional[IncidentReport]:
-    """Retrieves report if generated from pipeline data."""
-    return None
+def get_sample_track27_incident_report() -> IncidentReport:
+    """
+    Returns hardcoded sample Incident Report for Track #27 / GJ01AB1234
+    with is_sample=True flag for frontend badge rendering.
+    """
+    event = create_rash_driving_event(
+        track_id=27,
+        license_plate="GJ01AB1234",
+        timestamp=14.25,
+        timestamp_iso="2026-09-02T21:42:31+05:30",
+        latitude=23.0225,
+        longitude=72.5714,
+        address="SG Highway Junction, Ahmedabad, Gujarat",
+        speed_kmh=84.5,
+        speed_limit_kmh=50.0,
+        frame_number=356,
+        snapshot_path="/processed/events/rash_driving/track_27_snapshot.jpg",
+        plate_crop_path="/processed/events/plates/plate_GJ01AB1234.jpg"
+    )
+    report = IncidentReport(
+        report_id="REP-SAMPLE-TRACK27",
+        event=event,
+        issued_by="NagarNetra AI Safety Enforcement Engine",
+        penalty_points=4,
+        fine_amount_inr=2000,
+        is_sample=True
+    )
+    INCIDENT_REPORTS_STORE[report.report_id] = report
+    return report
 
 def get_incident_report_by_id(report_id: str) -> Optional[IncidentReport]:
     """Retrieves stored incident report by report ID."""
+    if report_id not in INCIDENT_REPORTS_STORE:
+        if "sample" in report_id.lower() or "27" in report_id:
+            return get_sample_track27_incident_report()
+        return None
     return INCIDENT_REPORTS_STORE.get(report_id)
 
